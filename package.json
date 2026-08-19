@@ -1,0 +1,23 @@
+{
+  "name": "telegram-dentist-bot",
+  "version": "1.0.0",
+  "description": "Telegram бот для записи в стоматологию с интеграцией Google Calendar и AI",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["telegram", "bot", "dentist", "calendar", "ai"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "telegraf": "^4.16.3",
+    "googleapis": "^144.0.0",
+    "dotenv": "^16.4.5",
+    "node-fetch": "^2.7.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
