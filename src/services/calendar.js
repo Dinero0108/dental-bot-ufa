@@ -184,7 +184,6 @@ class CalendarService {
           dateTime: endDateTime.toISOString(),
           timeZone: 'Europe/Moscow',
         },
-        attendees: [{ email: patient.email }],
         reminders: {
           useDefault: true,
         },
