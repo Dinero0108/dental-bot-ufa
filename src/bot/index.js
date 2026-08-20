@@ -129,7 +129,7 @@ class DentistBot {
         await ctx.reply(
           '💬 Задайте ваш вопрос о процедурах, ценах или записи.\n\n' +
           'Я постараюсь помочь или предложу записаться на консультацию.',
-          Markup.removeKeyboard()
+          undefined
         );
         this.userStates.set(ctx.chat.id, { state: 'awaiting_question' });
       } catch (error) {
@@ -224,7 +224,7 @@ class DentistBot {
       `/changename — изменить имя\n` +
       `/changephone — изменить телефон\n` +
       `/myhistory — история визитов`,
-      Markup.removeKeyboard()
+      undefined
     );
   }
 
@@ -248,7 +248,7 @@ class DentistBot {
     await ctx.reply(
       '👨‍👩‍👧‍👦 Добавление члена семьи\n\n' +
       'Укажите родственную связь (например: жена, сын, дочь, муж):',
-      Markup.removeKeyboard()
+      undefined
     );
   }
 
@@ -272,7 +272,7 @@ class DentistBot {
     await ctx.reply(
       '📝 Изменение имени\n\n' +
       'Введите ваше новое имя:',
-      Markup.removeKeyboard()
+      undefined
     );
   }
 
@@ -296,7 +296,7 @@ class DentistBot {
     await ctx.reply(
       '📞 Изменение телефона\n\n' +
       'Введите ваш новый номер телефона (формат: +7XXXXXXXXXX или 8XXXXXXXXXX):',
-      Markup.removeKeyboard()
+      undefined
     );
   }
 
@@ -332,7 +332,7 @@ class DentistBot {
           '📋 История визитов:\n\n' +
           'Записей в календаре не найдено.\n\n' +
           `Всего визитов в профиле: ${patient.visitsCount}`,
-          Markup.removeKeyboard()
+          undefined
         );
         return;
       }
@@ -353,7 +353,7 @@ class DentistBot {
       await ctx.reply(
         `📋 История визитов:\n\n${history}\n\n` +
         `Всего визитов в профиле: ${patient.visitsCount}`,
-        Markup.removeKeyboard()
+        undefined
       );
     } catch (error) {
       console.error('Ошибка получения истории:', error);
@@ -361,7 +361,7 @@ class DentistBot {
         `📋 История визитов:\n\n` +
         `Не удалось загрузить записи из календаря.\n\n` +
         `Всего визитов в профиле: ${patient.visitsCount}`,
-        Markup.removeKeyboard()
+        undefined
       );
     }
   }
@@ -464,7 +464,7 @@ class DentistBot {
         await ctx.editMessageText(
           '👨‍👩‍👧‍👦 Добавление члена семьи для записи\n\n' +
           'Укажите родственную связь (например: жена, сын, дочь, муж):',
-          Markup.removeKeyboard()
+          undefined
         );
       } catch (error) {
         console.error('Ошибка добавления члена семьи:', error);
@@ -540,7 +540,7 @@ class DentistBot {
         await ctx.editMessageText(
           '🚨 Понял! Это срочно — примем вас ВНЕ ОЧЕРЕДИ.\n\n' +
           'Опишите что случилось (кратко):',
-          Markup.removeKeyboard()
+          undefined
         );
       } catch (error) {
         console.error('Ошибка выбора срочной проблемы:', error);
@@ -565,7 +565,7 @@ class DentistBot {
 
         await ctx.editMessageText(
           '🦷 Понял, плановый визит. Опишите кратко что корректируем (необязательно):',
-          Markup.removeKeyboard()
+          undefined
         );
       } catch (error) {
         console.error('Ошибка выбора плановой проблемы:', error);
@@ -612,7 +612,7 @@ class DentistBot {
 
         await ctx.editMessageText(
           '💬 Опишите ваш случай:',
-          Markup.removeKeyboard()
+          undefined
         );
       } catch (error) {
         console.error('Ошибка выбора "другое":', error);
@@ -899,12 +899,12 @@ class DentistBot {
               await ctx.editMessageText(
                 `Отлично! Теперь введите номер телефона ${patientName}:\n` +
                 `(формат: +7XXXXXXXXXX или 8XXXXXXXXXX)`,
-                Markup.removeKeyboard()
+                undefined
               );
             } else {
               await ctx.editMessageText(
                 'Введите ваше имя:',
-                Markup.removeKeyboard()
+                undefined
               );
             }
           } else {
@@ -947,12 +947,12 @@ class DentistBot {
             await ctx.editMessageText(
               `Отлично! Теперь введите номер телефона ${patientName}:\n` +
               `(формат: +7XXXXXXXXXX или 8XXXXXXXXXX)`,
-              Markup.removeKeyboard()
+              undefined
             );
           } else {
             await ctx.editMessageText(
               'Введите ваше имя:',
-              Markup.removeKeyboard()
+              undefined
             );
           }
         }
@@ -997,12 +997,12 @@ class DentistBot {
           await ctx.editMessageText(
             `Отлично! Теперь введите номер телефона ${patientName}:\n` +
             `(формат: +7XXXXXXXXXX или 8XXXXXXXXXX)`,
-            Markup.removeKeyboard()
+            undefined
           );
         } else {
           await ctx.editMessageText(
             'Введите ваше имя:',
-            Markup.removeKeyboard()
+            undefined
           );
         }
       } catch (error) {
@@ -1358,7 +1358,7 @@ class DentistBot {
     await ctx.reply(
       '👤 Новый пациент\n\n' +
       'Введите ваше имя:',
-      Markup.removeKeyboard()
+      undefined
     );
   }
 
