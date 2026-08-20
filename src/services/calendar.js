@@ -136,7 +136,7 @@ class CalendarService {
         if (!isPastSlot) {
           const freeDoctors = [];
           const slotStartTime = new Date(currentTime);
-          const slotEndTime = new Date(slotEndTime);
+          const slotEndTime = new Date(slotStartTime.getTime() + 30 * 60000);
 
           doctors.doctors.forEach(doctor => {
             const isBusy = doctorBusyIntervals[doctor.id].some(busy => {
