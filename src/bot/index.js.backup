@@ -767,7 +767,7 @@ class DentistBot {
           } else {
             await ctx.editMessageText(
               `На ${selectedDate.toLocaleDateString('ru-RU')} нет свободных окон.\n\n` +
-              `Пожалуйста, выберите другую дата:`,
+              `Пожалуйста, выберите другую дату:`,
               Markup.inlineKeyboard([
                 [Markup.button.callback('Выбрать другую дату', 'choose_date')]
               ])
@@ -1073,133 +1073,6 @@ class DentistBot {
         console.error('Ошибка обработки текста:', error);
       }
     });
-
-    this.bot.action('confirm_booking', async (ctx) => {
-      try {
-        const userState = this.userStates.get(ctx.chat.id);
-        
-        if (!userState) {
-          await ctx.answerCbQuery('Сессия устарела');
-          return;
-        }
-
-        await ctx.editMessageText('📅 Создаю запись в календаре...');
-
-        const patientName = userState.recordingForFamily 
-          ? userState.familyMemberData.name 
-          : userState.patientName;
-
-        const actualDoctorId = userState.selectedDoctor === 'any' 
-          ? (userState.availableSlots.find(s => s.formatted === userState.selectedTime)?.freeDoctors[0] || null)
-          : userState.selectedDoctor;
-
-        const bookingResult = await calendarService.createBooking(
-          userState.selectedDate,
-          userState.selectedTime,
-          {
-            name: patientName,
-            phone: userState.patientPhone,
-            priority: userState.priority || 'normal',
-            problemDescription: userState.problemDescription || '',
-            isReturningPatient: userState.isReturningPatient || false
-          },
-          userState.selectedProcedure || 'other_urgent',
-          actualDoctorId
-        );
-
-        if (bookingResult.success) {
-          const userId = userState.recordingForSelf ? userState.patientId : ctx.chat.id.toString();
-          
-          if (userState.recordingForSelf) {
-            await patientsService.incrementVisitsCount(userId, {
-              procedure: userState.selectedProcedure,
-              notes: userState.problemDescription || ''
-            });
-          }
-
-          await this.notifyAdminBooking(userState, patientName, userState.patientPhone);
-          
-          const doctors = require('../config/doctors.json');
-          const doctor = actualDoctorId ? doctors.doctors.find(d => d.id === actualDoctorId) : null;
-
-          await ctx.editMessageText(
-            `✅ Запись успешно создана!\n\n` +
-            `Ваша запись подтверждена на:\n` +
-            `📅 ${new Date(userState.selectedDate).toLocaleDateString('ru-RU')} в ${userState.selectedTime}\n` +
-            `👨‍⚕️ ${doctor ? doctor.name : 'Врач'}\n\n` +
-            `Мы ждём вас в клинике!\n\n` +
-            `Если у вас есть вопросы, нажмите "💬 Задать вопрос".`
-          );
-
-          this.userStates.delete(ctx.chat.id);
-        } else if (bookingResult.error === 'slot_busy') {
-          await ctx.editMessageText(
-            '😔 Извините, это время только что заняли. Вот другие свободные окна:',
-            Markup.inlineKeyboard(
-              userState.availableSlots
-                .filter(slot => slot.formatted !== userState.selectedTime)
-                .slice(0, 5)
-                .map(slot => [
-                  Markup.button.callback(
-                    `${slot.formatted}`,
-                    `time_${userState.selectedDate}_${slot.formatted}`
-                  )
-                ])
-            )
-          );
-        } else {
-          throw new Error('Не удалось создать запись');
-        }
-      } catch (error) {
-        console.error('Ошибка подтверждения записи:', error);
-        await ctx.editMessageText(
-          '😔 Не удалось создать запись. Пожалуйста, попробуйте позже.',
-          Markup.inlineKeyboard([
-            [Markup.button.callback('Попробовать снова', 'retry_booking')]
-          ])
-        );
-      }
-    });
-
-    this.bot.action('cancel_booking', async (ctx) => {
-      try {
-        this.userStates.delete(ctx.chat.id);
-        await ctx.editMessageText(
-          'Запись отменена. Чтобы начать заново, нажмите "📅 Записаться".',
-          Markup.keyboard([['📅 Записаться'], ['💬 Задать вопрос']]).resize()
-        );
-      } catch (error) {
-        console.error('Ошибка отмены записи:', error);
-      }
-    });
-
-    this.bot.action('choose_date', async (ctx) => {
-      try {
-        const userState = this.userStates.get(ctx.chat.id);
-        if (!userState) {
-          await ctx.answerCbQuery('Сессия устарела');
-          return;
-        }
-
-        await this.showDateSelection(ctx, userState);
-      } catch (error) {
-        console.error('Ошибка выбора другой даты:', error);
-        await ctx.answerCbQuery('Произошла ошибка');
-      }
-    });
-
-    this.bot.action('retry_booking', async (ctx) => {
-      try {
-        await ctx.deleteMessage();
-        this.userStates.delete(ctx.chat.id);
-        await ctx.reply(
-          'Давайте попробуем снова!',
-          Markup.keyboard([['📅 Записаться'], ['💬 Задать вопрос']]).resize()
-        );
-      } catch (error) {
-        console.error('Ошибка повторной попытки:', error);
-      }
-    });
   }
 
   async showProcedureSelection(ctx, userState) {
@@ -1265,9 +1138,9 @@ class DentistBot {
 
         await ctx.editMessageText(
           `Записываем к ${singleDoctor.name} (${singleDoctor.specialty}).\n\n` +
-          'Выберите дата:',
+          'Выберите дату:',
           Markup.inlineKeyboard([
-            [Markup.button.callback('📅 Выбрать дата', 'choose_date')]
+            [Markup.button.callback('📅 Выбрать дату', 'choose_date')]
           ])
         );
         return;
@@ -1320,7 +1193,7 @@ class DentistBot {
       }
 
       await ctx.editMessageText(
-        '📅 Выберите дата:',
+        '📅 Выберите дату:',
         Markup.inlineKeyboard(buttons)
       );
     } catch (error) {
@@ -1717,6 +1590,841 @@ class DentistBot {
       ])
     );
   }
+
+  setupBookingFlow() {
+    this.bot.hears('📅 Записаться', async (ctx) => {
+      try {
+        const userId = ctx.from.id.toString();
+        const patient = patientsService.getPatient(userId);
+        
+        if (patient) {
+          await this.handleReturningPatient(ctx, patient);
+        } else {
+          await this.handleNewPatient(ctx);
+        }
+      } catch (error) {
+        console.error('Ошибка в начале записи:', error);
+        await ctx.reply(
+          'Произошла ошибка при начале записи. Пожалуйста, попробуйте позже.'
+        );
+      }
+    });
+
+    this.bot.action(/record_self_(.+)/, async (ctx) => {
+      try {
+        const userId = ctx.match[1];
+        const patient = patientsService.getPatient(userId);
+        
+        if (!patient) {
+          await ctx.answerCbQuery('Профиль не найден');
+          return;
+        }
+
+        this.userStates.set(ctx.chat.id, {
+          state: 'patient_qualification',
+          patientId: userId,
+          patientData: patient,
+          recordingForSelf: true,
+          isReturningPatient: patient.medicalHistory?.isReturningPatient || false
+        });
+
+        await ctx.editMessageText(
+          `👋 Здравствуйте, ${patient.name}!\n\n` +
+          `Вы уже проходили лечение в нашей клинике?`,
+          Markup.inlineKeyboard([
+            [Markup.button.callback('✅ Да, я ваш постоянный пациент', 'qualification_yes')],
+            [Markup.button.callback('❌ Нет, впервые', 'qualification_no')]
+          ])
+        );
+      } catch (error) {
+        console.error('Ошибка выбора записи для себя:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action(/record_family_(.+)_(\d+)/, async (ctx) => {
+      try {
+        const [_, userId, memberIndex] = ctx.match;
+        const patient = patientsService.getPatient(userId);
+        
+        if (!patient || !patient.familyMembers || !patient.familyMembers[memberIndex]) {
+          await ctx.answerCbQuery('Член семьи не найден');
+          return;
+        }
+
+        const familyMember = patient.familyMembers[memberIndex];
+
+        this.userStates.set(ctx.chat.id, {
+          state: 'patient_qualification',
+          patientId: userId,
+          patientData: patient,
+          familyMemberIndex: parseInt(memberIndex),
+          familyMemberData: familyMember,
+          recordingForSelf: false,
+          recordingForFamily: true
+        });
+
+        await ctx.editMessageText(
+          `👋 Записываем ${familyMember.relation} ${familyMember.name}\n\n` +
+          `${familyMember.name} уже проходил(а) лечение в нашей клинике?`,
+          Markup.inlineKeyboard([
+            [Markup.button.callback('✅ Да, постоянный пациент', 'qualification_yes')],
+            [Markup.button.callback('❌ Нет, впервые', 'qualification_no')]
+          ])
+        );
+      } catch (error) {
+        console.error('Ошибка выбора записи для семьи:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action('add_new_family_member', async (ctx) => {
+      try {
+        const userId = ctx.from.id.toString();
+        this.userStates.set(ctx.chat.id, {
+          state: 'adding_family_for_booking',
+          patientId: userId
+        });
+
+        await ctx.editMessageText(
+          '👨‍👩‍👧‍👦 Добавление члена семьи для записи\n\n' +
+          'Укажите родственную связь (например: жена, сын, дочь, муж):',
+          Markup.removeKeyboard()
+        );
+      } catch (error) {
+        console.error('Ошибка добавления члена семьи:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action('qualification_yes', async (ctx) => {
+      try {
+        const userState = this.userStates.get(ctx.chat.id);
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(ctx.chat.id, {
+          ...userState,
+          state: 'returning_patient_choice',
+          isReturningPatient: true
+        });
+
+        await ctx.editMessageText(
+          'Отлично! Что у вас сейчас?',
+          Markup.inlineKeyboard([
+            [Markup.button.callback('🚨 Острая боль/срочная проблема', 'problem_urgent')],
+            [Markup.button.callback('🦷 Плановая коррекция/продолжение лечения', 'problem_planned')],
+            [Markup.button.callback('🔍 Новая проблема', 'problem_new')],
+            [Markup.button.callback('💬 Другое — хочу описать', 'problem_other')]
+          ])
+        );
+      } catch (error) {
+        console.error('Ошибка квалификации "Да":', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action('qualification_no', async (ctx) => {
+      try {
+        const userState = this.userStates.get(ctx.chat.id);
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(ctx.chat.id, {
+          ...userState,
+          state: 'choose_procedure',
+          isReturningPatient: false
+        });
+
+        await this.showProcedureSelection(ctx, userState);
+      } catch (error) {
+        console.error('Ошибка квалификации "Нет":', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action('problem_urgent', async (ctx) => {
+      try {
+        const userState = this.userStates.get(ctx.chat.id);
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(ctx.chat.id, {
+          ...userState,
+          state: 'urgent_description',
+          priority: 'urgent',
+          problemType: 'urgent'
+        });
+
+        await ctx.editMessageText(
+          '🚨 Понял! Это срочно — примем вас ВНЕ ОЧЕРЕДИ.\n\n' +
+          'Опишите что случилось (кратко):',
+          Markup.removeKeyboard()
+        );
+      } catch (error) {
+        console.error('Ошибка выбора срочной проблемы:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action('problem_planned', async (ctx) => {
+      try {
+        const userState = this.userStates.get(ctx.chat.id);
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(ctx.chat.id, {
+          ...userState,
+          state: 'planned_description',
+          priority: 'normal',
+          problemType: 'planned'
+        });
+
+        await ctx.editMessageText(
+          '🦷 Понял, плановый визит. Опишите кратко что корректируем (необязательно):',
+          Markup.removeKeyboard()
+        );
+      } catch (error) {
+        console.error('Ошибка выбора плановой проблемы:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action('problem_new', async (ctx) => {
+      try {
+        const userState = this.userStates.get(ctx.chat.id);
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(ctx.chat.id, {
+          ...userState,
+          state: 'new_problem_description',
+          priority: 'normal',
+          problemType: 'new'
+        });
+
+        await ctx.editMessageText(
+          '🔍 Понял. Опишите проблему (необязательно):',
+          Markup.removeKeyboard()
+        );
+      } catch (error) {
+        console.error('Ошибка выбора новой проблемы:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action('problem_other', async (ctx) => {
+      try {
+        const userState = this.userStates.get(ctx.chat.id);
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(ctx.chat.id, {
+          ...userState,
+          state: 'other_description',
+          priority: 'normal',
+          problemType: 'other'
+        });
+
+        await ctx.editMessageText(
+          '💬 Опишите ваш случай:',
+          Markup.removeKeyboard()
+        );
+      } catch (error) {
+        console.error('Ошибка выбора "другое":', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action(/procedure_(.+)/, async (ctx) => {
+      try {
+        const procedureId = ctx.match[1];
+        const userState = this.userStates.get(ctx.chat.id);
+        
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(ctx.chat.id, {
+          ...userState,
+          state: 'choose_doctor',
+          selectedProcedure: procedureId
+        });
+
+        await this.showDoctorSelection(ctx, userState);
+      } catch (error) {
+        console.error('Ошибка выбора процедуры:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action(/urgent_procedure_(.+)/, async (ctx) => {
+      try {
+        const procedureId = ctx.match[1];
+        const userState = this.userStates.get(ctx.chat.id);
+        
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(ctx.chat.id, {
+          ...userState,
+          state: 'choose_doctor',
+          selectedProcedure: procedureId,
+          urgentProcedureType: procedureId
+        });
+
+        await this.showDoctorSelection(ctx, userState);
+      } catch (error) {
+        console.error('Ошибка выбора срочной процедуры:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action(/doctor_(.+)/, async (ctx) => {
+      try {
+        const doctorId = ctx.match[1];
+        const userState = this.userStates.get(ctx.chat.id);
+        
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(ctx.chat.id, {
+          ...userState,
+          state: 'choose_date',
+          selectedDoctor: doctorId
+        });
+
+        await this.showDateSelection(ctx, userState);
+      } catch (error) {
+        console.error('Ошибка выбора врача:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action('doctor_any', async (ctx) => {
+      try {
+        const userState = this.userStates.get(ctx.chat.id);
+        
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(ctx.chat.id, {
+          ...userState,
+          state: 'choose_date',
+          selectedDoctor: 'any'
+        });
+
+        await this.showDateSelection(ctx, userState);
+      } catch (error) {
+        console.error('Ошибка выбора любого свободного врача:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action(/date_(.+)/, async (ctx) => {
+      try {
+        const dateStr = ctx.match[1];
+        const userState = this.userStates.get(ctx.chat.id);
+        
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        const selectedDate = new Date(dateStr);
+        
+        await ctx.editMessageText(
+          `🔍 Ищу свободные окна на ${selectedDate.toLocaleDateString('ru-RU')}...`
+        );
+
+        const doctorId = userState.selectedDoctor || 'any';
+        const freeSlots = await calendarService.getFreeSlots(selectedDate, doctorId);
+        
+        if (freeSlots.slots.length === 0) {
+          const nextAvailable = await calendarService.findNextAvailableSlots(selectedDate, doctorId);
+          
+          if (nextAvailable.length > 0) {
+            let message = `🤖 На ${selectedDate.toLocaleDateString('ru-RU')} все окна заняты. Ближайшие свободные:\n\n`;
+            
+            const buttons = [];
+            
+            nextAvailable.forEach(day => {
+              if (day.slots.length > 0) {
+                day.slots.forEach(slot => {
+                  buttons.push([
+                    Markup.button.callback(
+                      `${day.dateFormatted} — ${slot.formatted}`,
+                      `time_${day.date}_${slot.formatted}`
+                    )
+                  ]);
+                });
+              }
+            });
+            
+            await ctx.editMessageText(
+              message,
+              Markup.inlineKeyboard(buttons)
+            );
+            
+            this.userStates.set(ctx.chat.id, {
+              ...userState,
+              availableDays: nextAvailable
+            });
+          } else {
+            await ctx.editMessageText(
+              `На ${selectedDate.toLocaleDateString('ru-RU')} нет свободных окон.\n\n` +
+              `Пожалуйста, выберите другую дату:`,
+              Markup.inlineKeyboard([
+                [Markup.button.callback('Выбрать другую дату', 'choose_date')]
+              ])
+            );
+          }
+          return;
+        }
+
+        const timeParts = this.groupSlotsByTimePart(freeSlots.slots);
+        const buttons = [];
+
+        if (timeParts.morning.length > 0) {
+          buttons.push([Markup.button.callback(`🌅 Утро (${timeParts.morning.length})`, `timepart_${dateStr}_morning`)]);
+        }
+        if (timeParts.day.length > 0) {
+          buttons.push([Markup.button.callback(`☀️ День (${timeParts.day.length})`, `timepart_${dateStr}_day`)]);
+        }
+        if (timeParts.evening.length > 0) {
+          buttons.push([Markup.button.callback(`🌆 Вечер (${timeParts.evening.length})`, `timepart_${dateStr}_evening`)]);
+        }
+
+        buttons.push([Markup.button.callback('Выбрать другую дату', 'choose_date')]);
+
+        await ctx.editMessageText(
+          `📅 На ${selectedDate.toLocaleDateString('ru-RU')} свободно ${freeSlots.slots.length} окон:\n\n` +
+          `Выберите часть дня:`,
+          Markup.inlineKeyboard(buttons)
+        );
+
+        this.userStates.set(ctx.chat.id, {
+          ...userState,
+          selectedDate: dateStr,
+          availableSlots: freeSlots.slots,
+          freeDoctorsBySlot: freeSlots.freeDoctorsBySlot,
+          timeParts: timeParts
+        });
+      } catch (error) {
+        console.error('Ошибка выбора даты:', error);
+        await ctx.editMessageText(
+          'Произошла ошибка при поиске свободных окон. 😔\n\n' +
+          'Пожалуйста, попробуйте позже.',
+          Markup.inlineKeyboard([
+            [Markup.button.callback('Попробовать снова', 'retry_booking')]
+          ])
+        );
+      }
+    });
+
+    this.bot.action(/timepart_(.+)_(.+)/, async (ctx) => {
+      try {
+        const [_, dateStr, timePart] = ctx.match;
+        const userState = this.userStates.get(ctx.chat.id);
+        
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        const slots = userState.timeParts[timePart] || [];
+        
+        if (slots.length === 0) {
+          await ctx.answerCbQuery('Нет свободных окон в этой части дня');
+          return;
+        }
+
+        const buttons = [];
+        for (let i = 0; i < slots.length; i += 3) {
+          const row = slots.slice(i, i + 3).map(slot => 
+            Markup.button.callback(
+              slot.formatted,
+              `time_${dateStr}_${slot.formatted}`
+            )
+          );
+          buttons.push(row);
+        }
+
+        buttons.push([Markup.button.callback('↩️ Назад', 'choose_date')]);
+
+        const timePartNames = {
+          morning: 'утро (09:00-12:00)',
+          day: 'день (12:00-17:00)',
+          evening: 'вечер (17:00-20:00)'
+        };
+
+        await ctx.editMessageText(
+          `⏰ Доступные окна на ${new Date(dateStr).toLocaleDateString('ru-RU')}, ${timePartNames[timePart]}:`,
+          Markup.inlineKeyboard(buttons)
+        );
+      } catch (error) {
+        console.error('Ошибка выбора части дня:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action(/time_(.+)_(.+)/, async (ctx) => {
+      try {
+        const [_, dateStr, timeStr] = ctx.match;
+        const userState = this.userStates.get(ctx.chat.id);
+        
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        const slot = userState.availableSlots.find(s => s.formatted === timeStr);
+        const freeDoctors = slot?.freeDoctors || [];
+
+        if (userState.selectedDoctor === 'any' && freeDoctors.length > 1) {
+          if (freeDoctors.length === 1) {
+            this.userStates.set(ctx.chat.id, {
+              ...userState,
+              state: 'entering_name',
+              selectedDate: dateStr,
+              selectedTime: timeStr,
+              selectedDoctor: freeDoctors[0]
+            });
+
+            const patientName = userState.recordingForFamily 
+              ? userState.familyMemberData.name 
+              : userState.patientData?.name || '';
+
+            if (patientName) {
+              this.userStates.set(ctx.chat.id, {
+                ...userState,
+                state: 'entering_phone',
+                selectedDate: dateStr,
+                selectedTime: timeStr,
+                selectedDoctor: freeDoctors[0],
+                patientName: patientName
+              });
+
+              await ctx.editMessageText(
+                `Отлично! Теперь введите номер телефона ${patientName}:\n` +
+                `(формат: +7XXXXXXXXXX или 8XXXXXXXXXX)`,
+                Markup.removeKeyboard()
+              );
+            } else {
+              await ctx.editMessageText(
+                'Введите ваше имя:',
+                Markup.removeKeyboard()
+              );
+            }
+          } else {
+            const doctors = require('../config/doctors.json');
+            const doctorButtons = freeDoctors.map(doctorId => {
+              const doctor = doctors.doctors.find(d => d.id === doctorId);
+              return [Markup.button.callback(
+                doctor ? doctor.name : doctorId,
+                `final_doctor_${dateStr}_${timeStr}_${doctorId}`
+              )];
+            });
+
+            await ctx.editMessageText(
+              `⏰ Выбранное время: ${timeStr}\n\n` +
+              `К кому из свободных врачей записать?`,
+              Markup.inlineKeyboard(doctorButtons)
+            );
+          }
+        } else {
+          this.userStates.set(ctx.chat.id, {
+            ...userState,
+            state: 'entering_name',
+            selectedDate: dateStr,
+            selectedTime: timeStr
+          });
+
+          const patientName = userState.recordingForFamily 
+            ? userState.familyMemberData.name 
+            : userState.patientData?.name || '';
+
+          if (patientName) {
+            this.userStates.set(ctx.chat.id, {
+              ...userState,
+              state: 'entering_phone',
+              selectedDate: dateStr,
+              selectedTime: timeStr,
+              patientName: patientName
+            });
+
+            await ctx.editMessageText(
+              `Отлично! Теперь введите номер телефона ${patientName}:\n` +
+              `(формат: +7XXXXXXXXXX или 8XXXXXXXXXX)`,
+              Markup.removeKeyboard()
+            );
+          } else {
+            await ctx.editMessageText(
+              'Введите ваше имя:',
+              Markup.removeKeyboard()
+            );
+          }
+        }
+      } catch (error) {
+        console.error('Ошибка выбора времени:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action(/final_doctor_(.+)_(.+)_(.+)/, async (ctx) => {
+      try {
+        const [_, dateStr, timeStr, doctorId] = ctx.match;
+        const userState = this.userStates.get(ctx.chat.id);
+        
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(ctx.chat.id, {
+          ...userState,
+          state: 'entering_name',
+          selectedDate: dateStr,
+          selectedTime: timeStr,
+          selectedDoctor: doctorId
+        });
+
+        const patientName = userState.recordingForFamily 
+          ? userState.familyMemberData.name 
+          : userState.patientData?.name || '';
+
+        if (patientName) {
+          this.userStates.set(ctx.chat.id, {
+            ...userState,
+            state: 'entering_phone',
+            selectedDate: dateStr,
+            selectedTime: timeStr,
+            selectedDoctor: doctorId,
+            patientName: patientName
+          });
+
+          await ctx.editMessageText(
+            `Отлично! Теперь введите номер телефона ${patientName}:\n` +
+            `(формат: +7XXXXXXXXXX или 8XXXXXXXXXX)`,
+            Markup.removeKeyboard()
+          );
+        } else {
+          await ctx.editMessageText(
+            'Введите ваше имя:',
+            Markup.removeKeyboard()
+          );
+        }
+      } catch (error) {
+        console.error('Ошибка выбора врача из списка:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.on('text', async (ctx) => {
+      try {
+        const userId = ctx.chat.id.toString();
+        const userState = this.userStates.get(userId);
+        
+        if (!userState) {
+          return;
+        }
+
+        const text = ctx.message.text;
+
+        switch (userState.state) {
+          case 'new_patient_name':
+            await this.handleNewPatientName(ctx, text, userState);
+            break;
+          case 'new_patient_phone':
+            await this.handleNewPatientPhone(ctx, text, userState);
+            break;
+          case 'adding_family_relation':
+            await this.handleFamilyRelation(ctx, text, userState);
+            break;
+          case 'adding_family_name':
+            await this.handleFamilyName(ctx, text, userState);
+            break;
+          case 'adding_family_phone':
+            await this.handleFamilyPhone(ctx, text, userState);
+            break;
+          case 'adding_family_for_booking':
+            await this.handleFamilyForBookingRelation(ctx, text, userState);
+            break;
+          case 'adding_family_for_booking_name':
+            await this.handleFamilyForBookingName(ctx, text, userState);
+            break;
+          case 'adding_family_for_booking_phone':
+            await this.handleFamilyForBookingPhone(ctx, text, userState);
+            break;
+          case 'changing_name':
+            await this.handleChangeName(ctx, text, userState);
+            break;
+          case 'changing_phone':
+            await this.handleChangePhone(ctx, text, userState);
+            break;
+          case 'urgent_description':
+          case 'planned_description':
+          case 'new_problem_description':
+          case 'other_description':
+            await this.handleProblemDescription(ctx, text, userState);
+            break;
+          case 'entering_name':
+            await this.handleBookingName(ctx, text, userState);
+            break;
+          case 'entering_phone':
+            await this.handleBookingPhone(ctx, text, userState);
+            break;
+        }
+      } catch (error) {
+        console.error('Ошибка обработки текста:', error);
+      }
+    });
+
+    this.bot.action('confirm_booking', async (ctx) => {
+    try {
+      const userState = this.userStates.get(ctx.chat.id);
+      
+      if (!userState) {
+        await ctx.answerCbQuery('Сессия устарела');
+        return;
+      }
+
+      await ctx.editMessageText('📅 Создаю запись в календаре...');
+
+      const patientName = userState.recordingForFamily 
+        ? userState.familyMemberData.name 
+        : userState.patientName;
+
+      const actualDoctorId = userState.selectedDoctor === 'any' 
+        ? (userState.availableSlots.find(s => s.formatted === userState.selectedTime)?.freeDoctors[0] || null)
+        : userState.selectedDoctor;
+
+      const bookingResult = await calendarService.createBooking(
+        userState.selectedDate,
+        userState.selectedTime,
+        {
+          name: patientName,
+          phone: userState.patientPhone,
+          priority: userState.priority || 'normal',
+          problemDescription: userState.problemDescription || '',
+          isReturningPatient: userState.isReturningPatient || false
+        },
+        userState.selectedProcedure || 'other_urgent',
+        actualDoctorId
+      );
+
+      if (bookingResult.success) {
+        const userId = userState.recordingForSelf ? userState.patientId : ctx.chat.id.toString();
+        
+        if (userState.recordingForSelf) {
+          await patientsService.incrementVisitsCount(userId, {
+            procedure: userState.selectedProcedure,
+            notes: userState.problemDescription || ''
+          });
+        }
+
+        await this.notifyAdminBooking(userState, patientName, userState.patientPhone);
+        
+        const doctors = require('../config/doctors.json');
+        const doctor = actualDoctorId ? doctors.doctors.find(d => d.id === actualDoctorId) : null;
+
+        await ctx.editMessageText(
+          `✅ Запись успешно создана!\n\n` +
+          `Ваша запись подтверждена на:\n` +
+          `📅 ${new Date(userState.selectedDate).toLocaleDateString('ru-RU')} в ${userState.selectedTime}\n` +
+          `👨‍⚕️ ${doctor ? doctor.name : 'Врач'}\n\n` +
+          `Мы ждём вас в клинике!\n\n` +
+          `Если у вас есть вопросы, нажмите "💬 Задать вопрос".`
+        );
+
+        this.userStates.delete(ctx.chat.id);
+      } else if (bookingResult.error === 'slot_busy') {
+        await ctx.editMessageText(
+          '😔 Извините, это время только что заняли. Вот другие свободные окна:',
+          Markup.inlineKeyboard(
+            userState.availableSlots
+              .filter(slot => slot.formatted !== userState.selectedTime)
+              .slice(0, 5)
+              .map(slot => [
+                Markup.button.callback(
+                  `${slot.formatted}`,
+                  `time_${userState.selectedDate}_${slot.formatted}`
+                )
+              ])
+          )
+        );
+      } else {
+        throw new Error('Не удалось создать запись');
+      }
+    } catch (error) {
+      console.error('Ошибка подтверждения записи:', error);
+      await ctx.editMessageText(
+        '😔 Не удалось создать запись. Пожалуйста, попробуйте позже.',
+        Markup.inlineKeyboard([
+          [Markup.button.callback('Попробовать снова', 'retry_booking')]
+        ])
+      );
+    }
+  });
+
+  this.bot.action('cancel_booking', async (ctx) => {
+    try {
+      this.userStates.delete(ctx.chat.id);
+      await ctx.editMessageText(
+        'Запись отменена. Чтобы начать заново, нажмите "📅 Записаться".',
+        Markup.keyboard([['📅 Записаться'], ['💬 Задать вопрос']]).resize()
+      );
+    } catch (error) {
+      console.error('Ошибка отмены записи:', error);
+    }
+  });
+
+  this.bot.action('choose_date', async (ctx) => {
+    try {
+      const userState = this.userStates.get(ctx.chat.id);
+      if (!userState) {
+        await ctx.answerCbQuery('Сессия устарела');
+        return;
+      }
+
+      await this.showDateSelection(ctx, userState);
+    } catch (error) {
+      console.error('Ошибка выбора другой даты:', error);
+      await ctx.answerCbQuery('Произошла ошибка');
+    }
+  });
+
+  this.bot.action('retry_booking', async (ctx) => {
+    try {
+      await ctx.deleteMessage();
+      this.userStates.delete(ctx.chat.id);
+      await ctx.reply(
+        'Давайте попробуем снова!',
+        Markup.keyboard([['📅 Записаться'], ['💬 Задать вопрос']]).resize()
+      );
+    } catch (error) {
+      console.error('Ошибка повторной попытки:', error);
+    }
+  });
 
   setupAIHandling() {
     this.bot.on('text', async (ctx) => {
