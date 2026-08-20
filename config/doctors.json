@@ -1,0 +1,14 @@
+{
+  "doctors": [
+    {
+      "id": "ivanova",
+      "name": "Др. Иванова",
+      "specialty": "Терапевт"
+    },
+    {
+      "id": "petrov",
+      "name": "Др. Петров",
+      "specialty": "Ортодонт"
+    }
+  ]
+}

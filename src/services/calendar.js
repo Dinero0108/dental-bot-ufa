@@ -40,18 +40,19 @@ class CalendarService {
     }
   }
 
-  async getFreeSlots(date) {
+  async getFreeSlots(date, doctorId = 'any') {
     if (!this.initialized || !this.calendar) {
       throw new Error('Google Calendar не инициализирован');
     }
 
     try {
       const schedule = require('../../config/schedule.json');
+      const doctors = require('../../config/doctors.json');
       
       const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
       if (schedule.daysOff.includes(dayOfWeek)) {
         console.log(`📅 [${date.toISOString().split('T')[0]}] Выходной день (${dayOfWeek})`);
-        return { date: date.toISOString().split('T')[0], slots: [] };
+        return { date: date.toISOString().split('T')[0], slots: [], freeDoctorsBySlot: {} };
       }
 
       const [workStartHour, workStartMinute] = schedule.workStart.split(':').map(Number);
@@ -72,7 +73,13 @@ class CalendarService {
         orderBy: 'startTime',
       });
 
-      const busyIntervals = [];
+      const doctorBusyIntervals = {};
+      const allDoctorsBusyIntervals = [];
+
+      doctors.doctors.forEach(doctor => {
+        doctorBusyIntervals[doctor.id] = [];
+      });
+
       const now = new Date();
       const isToday = date.toDateString() === now.toDateString();
 
@@ -81,7 +88,17 @@ class CalendarService {
         const end = event.end.dateTime ? new Date(event.end.dateTime) : null;
         
         if (start && end && start < endOfDay && end > startOfDay) {
-          busyIntervals.push({ start, end });
+          const eventDescription = event.description || '';
+          const doctorIdMatch = eventDescription.match(/doctor_id:\s*(\w+)/);
+          
+          if (doctorIdMatch) {
+            const eventDoctorId = doctorIdMatch[1];
+            if (doctorBusyIntervals[eventDoctorId]) {
+              doctorBusyIntervals[eventDoctorId].push({ start, end });
+            }
+          } else {
+            allDoctorsBusyIntervals.push({ start, end });
+          }
         }
       });
 
@@ -114,30 +131,76 @@ class CalendarService {
           continue;
         }
 
-        const isSlotBusy = busyIntervals.some(busy => {
-          return currentTime < busy.end && slotEndTime > busy.start;
-        });
-
         const isPastSlot = isToday && currentTime < now;
 
-        if (!isSlotBusy && !isPastSlot) {
-          allSlots.push({
-            start: new Date(currentTime),
-            end: new Date(slotEndTime),
-            formatted: currentTime.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+        if (!isPastSlot) {
+          const freeDoctors = [];
+          const slotStartTime = new Date(currentTime);
+          const slotEndTime = new Date(slotEndTime);
+
+          doctors.doctors.forEach(doctor => {
+            const isBusy = doctorBusyIntervals[doctor.id].some(busy => {
+              return slotStartTime < busy.end && slotEndTime > busy.start;
+            });
+
+            const isBlockedForAll = allDoctorsBusyIntervals.some(busy => {
+              return slotStartTime < busy.end && slotEndTime > busy.start;
+            });
+
+            if (!isBusy && !isBlockedForAll) {
+              freeDoctors.push(doctor.id);
+            }
           });
+
+          if (doctorId === 'any') {
+            if (freeDoctors.length > 0) {
+              allSlots.push({
+                start: new Date(slotStartTime),
+                end: new Date(slotEndTime),
+                formatted: slotStartTime.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+                freeDoctors: freeDoctors
+              });
+            }
+          } else {
+            const isBusy = doctorBusyIntervals[doctorId].some(busy => {
+              return slotStartTime < busy.end && slotEndTime > busy.start;
+            });
+
+            const isBlockedForAll = allDoctorsBusyIntervals.some(busy => {
+              return slotStartTime < busy.end && slotEndTime > busy.start;
+            });
+
+            if (!isBusy && !isBlockedForAll) {
+              allSlots.push({
+                start: new Date(slotStartTime),
+                end: new Date(slotEndTime),
+                formatted: slotStartTime.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+                freeDoctors: [doctorId]
+              });
+            }
+          }
         }
 
         currentTime = new Date(currentTime.getTime() + slotDuration);
       }
 
-      const freeSlots = allSlots.slice(0, 6);
+      const freeSlots = allSlots.slice(0, 20);
+      const freeDoctorsBySlot = {};
 
-      console.log(`📅 [${date.toISOString().split('T')[0]}] Занято слотов: ${busyIntervals.length}, Свободно: ${freeSlots.length}`);
+      freeSlots.forEach(slot => {
+        freeDoctorsBySlot[slot.formatted] = slot.freeDoctors;
+      });
+
+      const busyCount = doctorId === 'any' 
+        ? allDoctorsBusyIntervals.length 
+        : (doctorBusyIntervals[doctorId]?.length || 0) + allDoctorsBusyIntervals.length;
+
+      console.log(`📅 [${date.toISOString().split('T')[0]}] Врач ${doctorId}: занято ${busyCount}, свободно ${freeSlots.length}`);
 
       return {
         date: date.toISOString().split('T')[0],
-        slots: freeSlots
+        slots: freeSlots,
+        freeDoctorsBySlot: freeDoctorsBySlot
       };
     } catch (error) {
       console.error('Ошибка при получении свободных слотов:', error);
@@ -145,7 +208,7 @@ class CalendarService {
     }
   }
 
-  async findNextAvailableSlots(startDate) {
+  async findNextAvailableSlots(startDate, doctorId = 'any') {
     if (!this.initialized) return [];
 
     try {
@@ -159,7 +222,7 @@ class CalendarService {
         
         if (!schedule.daysOff.includes(dayOfWeek)) {
           try {
-            const slots = await this.getFreeSlots(currentDate);
+            const slots = await this.getFreeSlots(currentDate, doctorId);
             if (slots.slots.length > 0) {
               results.push({
                 date: currentDate.toISOString().split('T')[0],
@@ -182,12 +245,13 @@ class CalendarService {
     }
   }
 
-  async checkSlotAvailability(date, time, durationMinutes) {
+  async checkSlotAvailability(date, time, doctorId, durationMinutes) {
     if (!this.initialized || !this.calendar) {
       throw new Error('Google Calendar не инициализирован');
     }
 
     try {
+      const doctors = require('../../config/doctors.json');
       const [hours, minutes] = time.split(':').map(Number);
       const startDateTime = new Date(date);
       startDateTime.setHours(hours, minutes, 0, 0);
@@ -208,46 +272,85 @@ class CalendarService {
         orderBy: 'startTime',
       });
 
-      const busyIntervals = response.data.items
-        .filter(event => event.start.dateTime && event.end.dateTime)
-        .map(event => ({
-          start: new Date(event.start.dateTime),
-          end: new Date(event.end.dateTime)
-        }));
+      const doctorBusyIntervals = [];
+      const allDoctorsBusyIntervals = [];
 
-      const isSlotBusy = busyIntervals.some(busy => {
+      response.data.items.forEach(event => {
+        const start = event.start.dateTime ? new Date(event.start.dateTime) : null;
+        const end = event.end.dateTime ? new Date(event.end.dateTime) : null;
+        
+        if (start && end) {
+          const eventDescription = event.description || '';
+          const doctorIdMatch = eventDescription.match(/doctor_id:\s*(\w+)/);
+          
+          if (doctorIdMatch) {
+            const eventDoctorId = doctorIdMatch[1];
+            if (eventDoctorId === doctorId) {
+              doctorBusyIntervals.push({ start, end });
+            }
+          } else {
+            allDoctorsBusyIntervals.push({ start, end });
+          }
+        }
+      });
+
+      const isBusy = doctorBusyIntervals.some(busy => {
         return startDateTime < busy.end && endDateTime > busy.start;
       });
 
-      return !isSlotBusy;
+      const isBlockedForAll = allDoctorsBusyIntervals.some(busy => {
+        return startDateTime < busy.end && endDateTime > busy.start;
+      });
+
+      return !isBusy && !isBlockedForAll;
     } catch (error) {
       console.error('Ошибка проверки доступности слота:', error);
       throw error;
     }
   }
 
-  async createBooking(date, time, patient, procedure) {
+  async createBooking(date, time, patient, procedure, doctorId) {
     if (!this.initialized || !this.calendar) {
       throw new Error('Google Calendar не инициализирован');
     }
 
     try {
+      const doctors = require('../../config/doctors.json');
       const procedures = require('../../config/procedures.json');
       const procedureData = procedures.процедуры.find(p => p.id === procedure);
       const durationMinutes = procedureData ? procedureData.длительность_минут : 30;
 
-      const isAvailable = await this.checkSlotAvailability(date, time, durationMinutes);
-      
-      if (!isAvailable) {
-        return {
-          success: false,
-          error: 'slot_busy',
-          message: 'Время уже занято'
-        };
+      const doctor = doctors.doctors.find(d => d.id === doctorId);
+      if (!doctor && doctorId !== 'any') {
+        throw new Error(`Врач с ID "${doctorId}" не найден`);
       }
 
-      const startDateTime = new Date(date);
+      if (doctorId !== 'any') {
+        const isAvailable = await this.checkSlotAvailability(date, time, doctorId, durationMinutes);
+        
+        if (!isAvailable) {
+          return {
+            success: false,
+            error: 'slot_busy',
+            message: 'Время уже занято'
+          };
+        }
+      } else {
+        const slots = await this.getFreeSlots(date, 'any');
+        const slot = slots.slots.find(s => s.formatted === time);
+        
+        if (!slot || slot.freeDoctors.length === 0) {
+          return {
+            success: false,
+            error: 'slot_busy',
+            message: 'Время уже занято'
+          };
+        }
+      }
+
+      const actualDoctorId = doctorId === 'any' ? null : doctorId;
       const [hours, minutes] = time.split(':').map(Number);
+      const startDateTime = new Date(date);
       startDateTime.setHours(hours, minutes, 0, 0);
 
       const endDateTime = new Date(startDateTime.getTime() + durationMinutes * 60 * 1000);
@@ -261,7 +364,15 @@ class CalendarService {
         summary = `${procedureData?.название || 'Процедура'} — ${patient.name}, ${patient.phone}`;
       }
 
+      if (actualDoctorId && doctor) {
+        summary += ` (${doctor.name})`;
+      }
+
       let description = `Пациент: ${patient.name}\nТелефон: ${patient.phone}\nПроцедура: ${procedureData?.название || 'Не указана'}`;
+      
+      if (actualDoctorId) {
+        description += `\ndoctor_id: ${actualDoctorId}`;
+      }
       
       if (patient.priority === 'urgent') {
         description += `\nПроблема: ${patient.problemDescription || 'Не указана'}\nВНЕ ОЧЕРЕДИ`;
@@ -299,7 +410,8 @@ class CalendarService {
         eventId: response.data.id,
         htmlLink: response.data.htmlLink,
         start: response.data.start.dateTime,
-        end: response.data.end.dateTime
+        end: response.data.end.dateTime,
+        doctorId: actualDoctorId
       };
     } catch (error) {
       console.error('Ошибка при создании записи:', error);

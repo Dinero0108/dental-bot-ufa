@@ -97,12 +97,16 @@ class DentistBot {
 
     this.bot.hears('ℹ️ О клинике', async (ctx) => {
       try {
+        const doctors = require('../config/doctors.json');
+        const doctorsList = doctors.doctors.map(d => `• ${d.name} — ${d.specialty}`).join('\n');
+
         await ctx.reply(
           '🏥 Наша стоматологическая клиника\n\n' +
           '• Современное оборудование\n' +
           '• Опытные специалисты\n' +
           '• Безболезненное лечение\n' +
           '• Удобное расположение\n\n' +
+          `Наши врачи:\n${doctorsList}\n\n` +
           'Работаем с 09:00 до 20:00, кроме воскресенья.\n\n' +
           'Для записи нажмите "📅 Записаться".'
         );
@@ -333,12 +337,16 @@ class DentistBot {
         return;
       }
 
+      const doctors = require('../config/doctors.json');
       const history = patientEvents
         .sort((a, b) => new Date(a.start.dateTime || a.start.date) - new Date(b.start.dateTime || b.start.date))
         .map((event, index) => {
           const date = new Date(event.start.dateTime || event.start.date);
           const procedure = event.summary || 'Не указано';
-          return `${index + 1}. ${date.toLocaleDateString('ru-RU')} — ${procedure}`;
+          const doctorMatch = event.description?.match(/doctor_id:\s*(\w+)/);
+          const doctor = doctorMatch ? doctors.doctors.find(d => d.id === doctorMatch[1]) : null;
+          const doctorInfo = doctor ? ` (${doctor.name})` : '';
+          return `${index + 1}. ${date.toLocaleDateString('ru-RU')} — ${procedure}${doctorInfo}`;
         })
         .join('\n');
 
@@ -503,11 +511,11 @@ class DentistBot {
 
         this.userStates.set(ctx.chat.id, {
           ...userState,
-          state: 'choose_date',
+          state: 'choose_procedure',
           isReturningPatient: false
         });
 
-        await this.showDateSelection(ctx, userState);
+        await this.showProcedureSelection(ctx, userState);
       } catch (error) {
         console.error('Ошибка квалификации "Нет":', error);
         await ctx.answerCbQuery('Произошла ошибка');
@@ -615,6 +623,98 @@ class DentistBot {
       }
     });
 
+    this.bot.action(/procedure_(.+)/, async (ctx) => {
+      try {
+        const procedureId = ctx.match[1];
+        const userState = this.userStates.get(ctx.chat.id);
+        
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(ctx.chat.id, {
+          ...userState,
+          state: 'choose_doctor',
+          selectedProcedure: procedureId
+        });
+
+        await this.showDoctorSelection(ctx, userState);
+      } catch (error) {
+        console.error('Ошибка выбора процедуры:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action(/urgent_procedure_(.+)/, async (ctx) => {
+      try {
+        const procedureId = ctx.match[1];
+        const userState = this.userStates.get(ctx.chat.id);
+        
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(ctx.chat.id, {
+          ...userState,
+          state: 'choose_doctor',
+          selectedProcedure: procedureId,
+          urgentProcedureType: procedureId
+        });
+
+        await this.showDoctorSelection(ctx, userState);
+      } catch (error) {
+        console.error('Ошибка выбора срочной процедуры:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action(/doctor_(.+)/, async (ctx) => {
+      try {
+        const doctorId = ctx.match[1];
+        const userState = this.userStates.get(ctx.chat.id);
+        
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(ctx.chat.id, {
+          ...userState,
+          state: 'choose_date',
+          selectedDoctor: doctorId
+        });
+
+        await this.showDateSelection(ctx, userState);
+      } catch (error) {
+        console.error('Ошибка выбора врача:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action('doctor_any', async (ctx) => {
+      try {
+        const userState = this.userStates.get(ctx.chat.id);
+        
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(ctx.chat.id, {
+          ...userState,
+          state: 'choose_date',
+          selectedDoctor: 'any'
+        });
+
+        await this.showDateSelection(ctx, userState);
+      } catch (error) {
+        console.error('Ошибка выбора любого свободного врача:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
     this.bot.action(/date_(.+)/, async (ctx) => {
       try {
         const dateStr = ctx.match[1];
@@ -631,10 +731,11 @@ class DentistBot {
           `🔍 Ищу свободные окна на ${selectedDate.toLocaleDateString('ru-RU')}...`
         );
 
-        const freeSlots = await calendarService.getFreeSlots(selectedDate);
+        const doctorId = userState.selectedDoctor || 'any';
+        const freeSlots = await calendarService.getFreeSlots(selectedDate, doctorId);
         
         if (freeSlots.slots.length === 0) {
-          const nextAvailable = await calendarService.findNextAvailableSlots(selectedDate);
+          const nextAvailable = await calendarService.findNextAvailableSlots(selectedDate, doctorId);
           
           if (nextAvailable.length > 0) {
             let message = `🤖 На ${selectedDate.toLocaleDateString('ru-RU')} все окна заняты. Ближайшие свободные:\n\n`;
@@ -650,108 +751,7 @@ class DentistBot {
                       `time_${day.date}_${slot.formatted}`
                     )
                   ]);
-    this.bot.action('confirm_booking', async (ctx) => {
-      try {
-        const userState = this.userStates.get(ctx.chat.id);
-        
-        if (!userState) {
-          await ctx.answerCbQuery('Сессия устарела');
-          return;
-        }
-
-        await ctx.editMessageText('📅 Создаю запись в календаре...');
-
-        const patientName = userState.recordingForFamily 
-          ? userState.familyMemberData.name 
-          : userState.patientName;
-
-        const bookingResult = await calendarService.createBooking(
-          userState.selectedDate,
-          userState.selectedTime,
-          {
-            name: patientName,
-            phone: userState.patientPhone,
-            priority: userState.priority || 'normal',
-            problemDescription: userState.problemDescription || '',
-            isReturningPatient: userState.isReturningPatient || false
-          },
-          userState.selectedProcedure || 'other_urgent'
-        );
-
-        if (bookingResult.success) {
-          const userId = userState.recordingForSelf ? userState.patientId : ctx.chat.id.toString();
-          
-          if (userState.recordingForSelf) {
-            await patientsService.incrementVisitsCount(userId, {
-              procedure: userState.selectedProcedure,
-              notes: userState.problemDescription || ''
-            });
-          }
-
-          await this.notifyAdminBooking(userState, patientName, userState.patientPhone);
-          
-          await ctx.editMessageText(
-            `✅ Запись успешно создана!\n\n` +
-            `Ваша запись подтверждена на:\n` +
-            `📅 ${new Date(userState.selectedDate).toLocaleDateString('ru-RU')} в ${userState.selectedTime}\n\n` +
-            `Мы ждём вас в клинике!\n\n` +
-            `Если у вас есть вопросы, нажмите "💬 Задать вопрос".`
-          );
-
-          this.userStates.delete(ctx.chat.id);
-        } else if (bookingResult.error === 'slot_busy') {
-          await ctx.editMessageText(
-            '😔 Извините, это время только что заняли. Вот другие свободные окна:',
-            Markup.inlineKeyboard(
-              userState.availableSlots
-                .filter(slot => slot.formatted !== userState.selectedTime)
-                .slice(0, 5)
-                .map(slot => [
-                  Markup.button.callback(
-                    `${slot.formatted}`,
-                    `time_${userState.selectedDate}_${slot.formatted}`
-                  )
-                ])
-            )
-          );
-        } else {
-          throw new Error('Не удалось создать запись');
-        }
-      } catch (error) {
-        console.error('Ошибка подтверждения записи:', error);
-        await ctx.editMessageText(
-          '😔 Не удалось создать запись. Пожалуйста, попробуйте позже.',
-          Markup.inlineKeyboard([
-            [Markup.button.callback('Попробовать снова', 'retry_booking')]
-          ])
-        );
-      }
-    });
-
-    this.bot.action('cancel_booking', async (ctx) => {
-      try {
-        this.userStates.delete(ctx.chat.id);
-        await ctx.editMessageText(
-          'Запись отменена. Чтобы начать заново, нажмите "📅 Записаться".',
-          Markup.keyboard([['📅 Записаться'], ['💬 Задать вопрос']]).resize()
-        );
-      } catch (error) {
-        console.error('Ошибка отмены записи:', error);
-      }
-    });
-
-    this.bot.action('retry_booking', async (ctx) => {
-      try {
-        await ctx.deleteMessage();
-        this.userStates.delete(ctx.chat.id);
-        await ctx.reply(
-          'Давайте попробуем снова!',
-          Markup.keyboard([['📅 Записаться'], ['💬 Задать вопрос']]).resize()
-        );
-      } catch (error) {
-        console.error('Ошибка повторной попытки:', error);
-      }
-    });
+                });
               }
             });
             
@@ -776,24 +776,33 @@ class DentistBot {
           return;
         }
 
-        const buttons = freeSlots.slots.map(slot => 
-          [Markup.button.callback(
-            `${slot.formatted}`,
-            `time_${dateStr}_${slot.formatted}`
-          )]
-        );
+        const timeParts = this.groupSlotsByTimePart(freeSlots.slots);
+        const buttons = [];
+
+        if (timeParts.morning.length > 0) {
+          buttons.push([Markup.button.callback(`🌅 Утро (${timeParts.morning.length})`, `timepart_${dateStr}_morning`)]);
+        }
+        if (timeParts.day.length > 0) {
+          buttons.push([Markup.button.callback(`☀️ День (${timeParts.day.length})`, `timepart_${dateStr}_day`)]);
+        }
+        if (timeParts.evening.length > 0) {
+          buttons.push([Markup.button.callback(`🌆 Вечер (${timeParts.evening.length})`, `timepart_${dateStr}_evening`)]);
+        }
 
         buttons.push([Markup.button.callback('Выбрать другую дату', 'choose_date')]);
 
         await ctx.editMessageText(
-          `Доступные окна на ${selectedDate.toLocaleDateString('ru-RU')}:`,
+          `📅 На ${selectedDate.toLocaleDateString('ru-RU')} свободно ${freeSlots.slots.length} окон:\n\n` +
+          `Выберите часть дня:`,
           Markup.inlineKeyboard(buttons)
         );
 
         this.userStates.set(ctx.chat.id, {
           ...userState,
           selectedDate: dateStr,
-          availableSlots: freeSlots.slots
+          availableSlots: freeSlots.slots,
+          freeDoctorsBySlot: freeSlots.freeDoctorsBySlot,
+          timeParts: timeParts
         });
       } catch (error) {
         console.error('Ошибка выбора даты:', error);
@@ -807,6 +816,52 @@ class DentistBot {
       }
     });
 
+    this.bot.action(/timepart_(.+)_(.+)/, async (ctx) => {
+      try {
+        const [_, dateStr, timePart] = ctx.match;
+        const userState = this.userStates.get(ctx.chat.id);
+        
+        if (!userState) {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        const slots = userState.timeParts[timePart] || [];
+        
+        if (slots.length === 0) {
+          await ctx.answerCbQuery('Нет свободных окон в этой части дня');
+          return;
+        }
+
+        const buttons = [];
+        for (let i = 0; i < slots.length; i += 3) {
+          const row = slots.slice(i, i + 3).map(slot => 
+            Markup.button.callback(
+              slot.formatted,
+              `time_${dateStr}_${slot.formatted}`
+            )
+          );
+          buttons.push(row);
+        }
+
+        buttons.push([Markup.button.callback('↩️ Назад', 'choose_date')]);
+
+        const timePartNames = {
+          morning: 'утро (09:00-12:00)',
+          day: 'день (12:00-17:00)',
+          evening: 'вечер (17:00-20:00)'
+        };
+
+        await ctx.editMessageText(
+          `⏰ Доступные окна на ${new Date(dateStr).toLocaleDateString('ru-RU')}, ${timePartNames[timePart]}:`,
+          Markup.inlineKeyboard(buttons)
+        );
+      } catch (error) {
+        console.error('Ошибка выбора части дня:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
     this.bot.action(/time_(.+)_(.+)/, async (ctx) => {
       try {
         const [_, dateStr, timeStr] = ctx.match;
@@ -817,17 +872,92 @@ class DentistBot {
           return;
         }
 
-        this.userStates.set(ctx.chat.id, {
-          ...userState,
-          state: 'choose_procedure',
-          selectedDate: dateStr,
-          selectedTime: timeStr
-        });
+        const slot = userState.availableSlots.find(s => s.formatted === timeStr);
+        const freeDoctors = slot?.freeDoctors || [];
 
-        if (userState.priority === 'urgent') {
-          await this.showUrgentProcedures(ctx, userState);
+        if (userState.selectedDoctor === 'any' && freeDoctors.length > 1) {
+          if (freeDoctors.length === 1) {
+            this.userStates.set(ctx.chat.id, {
+              ...userState,
+              state: 'entering_name',
+              selectedDate: dateStr,
+              selectedTime: timeStr,
+              selectedDoctor: freeDoctors[0]
+            });
+
+            const patientName = userState.recordingForFamily 
+              ? userState.familyMemberData.name 
+              : userState.patientData?.name || '';
+
+            if (patientName) {
+              this.userStates.set(ctx.chat.id, {
+                ...userState,
+                state: 'entering_phone',
+                selectedDate: dateStr,
+                selectedTime: timeStr,
+                selectedDoctor: freeDoctors[0],
+                patientName: patientName
+              });
+
+              await ctx.editMessageText(
+                `Отлично! Теперь введите номер телефона ${patientName}:\n` +
+                `(формат: +7XXXXXXXXXX или 8XXXXXXXXXX)`,
+                Markup.removeKeyboard()
+              );
+            } else {
+              await ctx.editMessageText(
+                'Введите ваше имя:',
+                Markup.removeKeyboard()
+              );
+            }
+          } else {
+            const doctors = require('../config/doctors.json');
+            const doctorButtons = freeDoctors.map(doctorId => {
+              const doctor = doctors.doctors.find(d => d.id === doctorId);
+              return [Markup.button.callback(
+                doctor ? doctor.name : doctorId,
+                `final_doctor_${dateStr}_${timeStr}_${doctorId}`
+              )];
+            });
+
+            await ctx.editMessageText(
+              `⏰ Выбранное время: ${timeStr}\n\n` +
+              `К кому из свободных врачей записать?`,
+              Markup.inlineKeyboard(doctorButtons)
+            );
+          }
         } else {
-          await this.showAllProcedures(ctx, userState);
+          this.userStates.set(ctx.chat.id, {
+            ...userState,
+            state: 'entering_name',
+            selectedDate: dateStr,
+            selectedTime: timeStr
+          });
+
+          const patientName = userState.recordingForFamily 
+            ? userState.familyMemberData.name 
+            : userState.patientData?.name || '';
+
+          if (patientName) {
+            this.userStates.set(ctx.chat.id, {
+              ...userState,
+              state: 'entering_phone',
+              selectedDate: dateStr,
+              selectedTime: timeStr,
+              patientName: patientName
+            });
+
+            await ctx.editMessageText(
+              `Отлично! Теперь введите номер телефона ${patientName}:\n` +
+              `(формат: +7XXXXXXXXXX или 8XXXXXXXXXX)`,
+              Markup.removeKeyboard()
+            );
+          } else {
+            await ctx.editMessageText(
+              'Введите ваше имя:',
+              Markup.removeKeyboard()
+            );
+          }
         }
       } catch (error) {
         console.error('Ошибка выбора времени:', error);
@@ -835,9 +965,9 @@ class DentistBot {
       }
     });
 
-    this.bot.action(/urgent_procedure_(.+)/, async (ctx) => {
+    this.bot.action(/final_doctor_(.+)_(.+)_(.+)/, async (ctx) => {
       try {
-        const procedureId = ctx.match[1];
+        const [_, dateStr, timeStr, doctorId] = ctx.match;
         const userState = this.userStates.get(ctx.chat.id);
         
         if (!userState) {
@@ -848,8 +978,9 @@ class DentistBot {
         this.userStates.set(ctx.chat.id, {
           ...userState,
           state: 'entering_name',
-          selectedProcedure: procedureId,
-          urgentProcedureType: procedureId
+          selectedDate: dateStr,
+          selectedTime: timeStr,
+          selectedDoctor: doctorId
         });
 
         const patientName = userState.recordingForFamily 
@@ -860,8 +991,9 @@ class DentistBot {
           this.userStates.set(ctx.chat.id, {
             ...userState,
             state: 'entering_phone',
-            selectedProcedure: procedureId,
-            urgentProcedureType: procedureId,
+            selectedDate: dateStr,
+            selectedTime: timeStr,
+            selectedDoctor: doctorId,
             patientName: patientName
           });
 
@@ -877,67 +1009,7 @@ class DentistBot {
           );
         }
       } catch (error) {
-        console.error('Ошибка выбора срочной процедуры:', error);
-        await ctx.answerCbQuery('Произошла ошибка');
-      }
-    });
-
-    this.bot.action(/procedure_(.+)/, async (ctx) => {
-      try {
-        const procedureId = ctx.match[1];
-        const userState = this.userStates.get(ctx.chat.id);
-        
-        if (!userState) {
-          await ctx.answerCbQuery('Сессия устарела');
-          return;
-        }
-
-        this.userStates.set(ctx.chat.id, {
-          ...userState,
-          state: 'entering_name',
-          selectedProcedure: procedureId
-        });
-
-        const patientName = userState.recordingForFamily 
-          ? userState.familyMemberData.name 
-          : userState.patientData?.name || '';
-
-        if (patientName) {
-          this.userStates.set(ctx.chat.id, {
-            ...userState,
-            state: 'entering_phone',
-            selectedProcedure: procedureId,
-            patientName: patientName
-          });
-
-          await ctx.editMessageText(
-            `Отлично! Теперь введите номер телефона ${patientName}:\n` +
-            `(формат: +7XXXXXXXXXX или 8XXXXXXXXXX)`,
-            Markup.removeKeyboard()
-          );
-        } else {
-          await ctx.editMessageText(
-            'Введите ваше имя:',
-            Markup.removeKeyboard()
-          );
-        }
-      } catch (error) {
-        console.error('Ошибка выбора процедуры:', error);
-        await ctx.answerCbQuery('Произошла ошибка');
-      }
-    });
-
-    this.bot.action('choose_date', async (ctx) => {
-      try {
-        const userState = this.userStates.get(ctx.chat.id);
-        if (!userState) {
-          await ctx.answerCbQuery('Сессия устарела');
-          return;
-        }
-
-        await this.showDateSelection(ctx, userState);
-      } catch (error) {
-        console.error('Ошибка выбора другой даты:', error);
+        console.error('Ошибка выбора врача из списка:', error);
         await ctx.answerCbQuery('Произошла ошибка');
       }
     });
@@ -1003,39 +1075,17 @@ class DentistBot {
     });
   }
 
-  async showDateSelection(ctx, userState) {
+  async showProcedureSelection(ctx, userState) {
     try {
-      const schedule = require('../../config/schedule.json');
-      const today = new Date();
-      const buttons = [];
-
-      for (let i = 0; i < schedule.bookingDaysAhead; i++) {
-        const date = new Date(today);
-        date.setDate(today.getDate() + i);
-        
-        const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-        if (schedule.daysOff.includes(dayOfWeek)) {
-          continue;
-        }
-
-        const dateStr = date.toISOString().split('T')[0];
-        const dateLabel = i === 0 ? 'Сегодня' : 
-                         i === 1 ? 'Завтра' : 
-                         date.toLocaleDateString('ru-RU');
-
-        buttons.push([
-          Markup.button.callback(dateLabel, `date_${dateStr}`)
-        ]);
+      if (userState.priority === 'urgent') {
+        await this.showUrgentProcedures(ctx, userState);
+      } else {
+        await this.showAllProcedures(ctx, userState);
       }
-
-      await ctx.editMessageText(
-        '📅 Выберите дату:',
-        Markup.inlineKeyboard(buttons)
-      );
     } catch (error) {
-      console.error('Ошибка показа выбора даты:', error);
+      console.error('Ошибка показа процедур:', error);
       await ctx.editMessageText(
-        'Произошла ошибка при загрузке дат. Пожалуйста, попробуйте позже.'
+        'Произошла ошибка при загрузке процедур. Пожалуйста, попробуйте позже.'
       );
     }
   }
@@ -1072,6 +1122,106 @@ class DentistBot {
       '📅 Выберите процедуру:',
       Markup.inlineKeyboard(buttons)
     );
+  }
+
+  async showDoctorSelection(ctx, userState) {
+    try {
+      const doctors = require('../config/doctors.json');
+      
+      if (doctors.doctors.length === 1) {
+        const singleDoctor = doctors.doctors[0];
+        this.userStates.set(ctx.chat.id, {
+          ...userState,
+          state: 'choose_date',
+          selectedDoctor: singleDoctor.id
+        });
+
+        await ctx.editMessageText(
+          `Записываем к ${singleDoctor.name} (${singleDoctor.specialty}).\n\n` +
+          'Выберите дату:',
+          Markup.inlineKeyboard([
+            [Markup.button.callback('📅 Выбрать дату', 'choose_date')]
+          ])
+        );
+        return;
+      }
+
+      const buttons = doctors.doctors.map(doctor => 
+        [Markup.button.callback(
+          `${doctor.name} — ${doctor.specialty}`,
+          `doctor_${doctor.id}`
+        )]
+      );
+
+      buttons.push([Markup.button.callback('🎲 Любой свободный', 'doctor_any')]);
+
+      await ctx.editMessageText(
+        '🤔 К какому врачу запишем?',
+        Markup.inlineKeyboard(buttons)
+      );
+    } catch (error) {
+      console.error('Ошибка показа выбора врача:', error);
+      await ctx.editMessageText(
+        'Произошла ошибка при загрузке врачей. Пожалуйста, попробуйте позже.'
+      );
+    }
+  }
+
+  async showDateSelection(ctx, userState) {
+    try {
+      const schedule = require('../config/schedule.json');
+      const today = new Date();
+      const buttons = [];
+
+      for (let i = 0; i < schedule.bookingDaysAhead; i++) {
+        const date = new Date(today);
+        date.setDate(today.getDate() + i);
+        
+        const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+        if (schedule.daysOff.includes(dayOfWeek)) {
+          continue;
+        }
+
+        const dateStr = date.toISOString().split('T')[0];
+        const dateLabel = i === 0 ? 'Сегодня' : 
+                         i === 1 ? 'Завтра' : 
+                         date.toLocaleDateString('ru-RU');
+
+        buttons.push([
+          Markup.button.callback(dateLabel, `date_${dateStr}`)
+        ]);
+      }
+
+      await ctx.editMessageText(
+        '📅 Выберите дату:',
+        Markup.inlineKeyboard(buttons)
+      );
+    } catch (error) {
+      console.error('Ошибка показа выбора даты:', error);
+      await ctx.editMessageText(
+        'Произошла ошибка при загрузке дат. Пожалуйста, попробуйте позже.'
+      );
+    }
+  }
+
+  groupSlotsByTimePart(slots) {
+    const morning = [];
+    const day = [];
+    const evening = [];
+
+    slots.forEach(slot => {
+      const hour = slot.start.getHours();
+      
+      if (hour >= 9 && hour < 12) {
+        morning.push(slot);
+      } else if (hour >= 12 && hour < 17) {
+        day.push(slot);
+      } else if (hour >= 17 && hour < 20) {
+        evening.push(slot);
+      }
+    });
+
+    return { morning, day, evening };
   }
 
   async handleNewPatient(ctx) {
@@ -1367,11 +1517,11 @@ class DentistBot {
     
     this.userStates.set(userId, {
       ...userState,
-      state: 'choose_date',
+      state: 'choose_procedure',
       problemDescription: text.trim()
     });
 
-    await this.showDateSelection(ctx, userState);
+    await this.showProcedureSelection(ctx, userState);
   }
 
   async handleBookingName(ctx, text, userState) {
@@ -1410,6 +1560,9 @@ class DentistBot {
       ? userState.familyMemberData.name 
       : userState.patientName;
 
+    const doctors = require('../config/doctors.json');
+    const doctor = userState.selectedDoctor ? doctors.doctors.find(d => d.id === userState.selectedDoctor) : null;
+
     const procedureName = userState.selectedProcedure 
       ? (userState.selectedProcedure === 'acute_pain' ? 'Острая зубная боль' :
          userState.selectedProcedure === 'broken_appliance' ? 'Сломался протез/брекет' :
@@ -1424,6 +1577,7 @@ class DentistBot {
       `📞 Телефон: ${formattedPhone}\n` +
       `📅 Дата: ${new Date(userState.selectedDate).toLocaleDateString('ru-RU')}\n` +
       `⏰ Время: ${userState.selectedTime}\n` +
+      (doctor ? `👨‍⚕️ Врач: ${doctor.name} (${doctor.specialty})\n` : '') +
       (userState.priority === 'urgent' ? `🚨 Тип: Срочная запись (ВНЕ ОЧЕРЕДИ)\n` : '') +
       (userState.problemDescription ? `💬 Описание: ${userState.problemDescription}\n` : '') +
       (procedureName !== 'Не указано' ? `🦷 Процедура: ${procedureName}\n` : '') +
@@ -1436,6 +1590,133 @@ class DentistBot {
       ])
     );
   }
+
+  this.bot.action('confirm_booking', async (ctx) => {
+    try {
+      const userState = this.userStates.get(ctx.chat.id);
+      
+      if (!userState) {
+        await ctx.answerCbQuery('Сессия устарела');
+        return;
+      }
+
+      await ctx.editMessageText('📅 Создаю запись в календаре...');
+
+      const patientName = userState.recordingForFamily 
+        ? userState.familyMemberData.name 
+        : userState.patientName;
+
+      const actualDoctorId = userState.selectedDoctor === 'any' 
+        ? (userState.availableSlots.find(s => s.formatted === userState.selectedTime)?.freeDoctors[0] || null)
+        : userState.selectedDoctor;
+
+      const bookingResult = await calendarService.createBooking(
+        userState.selectedDate,
+        userState.selectedTime,
+        {
+          name: patientName,
+          phone: userState.patientPhone,
+          priority: userState.priority || 'normal',
+          problemDescription: userState.problemDescription || '',
+          isReturningPatient: userState.isReturningPatient || false
+        },
+        userState.selectedProcedure || 'other_urgent',
+        actualDoctorId
+      );
+
+      if (bookingResult.success) {
+        const userId = userState.recordingForSelf ? userState.patientId : ctx.chat.id.toString();
+        
+        if (userState.recordingForSelf) {
+          await patientsService.incrementVisitsCount(userId, {
+            procedure: userState.selectedProcedure,
+            notes: userState.problemDescription || ''
+          });
+        }
+
+        await this.notifyAdminBooking(userState, patientName, userState.patientPhone);
+        
+        const doctors = require('../config/doctors.json');
+        const doctor = actualDoctorId ? doctors.doctors.find(d => d.id === actualDoctorId) : null;
+
+        await ctx.editMessageText(
+          `✅ Запись успешно создана!\n\n` +
+          `Ваша запись подтверждена на:\n` +
+          `📅 ${new Date(userState.selectedDate).toLocaleDateString('ru-RU')} в ${userState.selectedTime}\n` +
+          `👨‍⚕️ ${doctor ? doctor.name : 'Врач'}\n\n` +
+          `Мы ждём вас в клинике!\n\n` +
+          `Если у вас есть вопросы, нажмите "💬 Задать вопрос".`
+        );
+
+        this.userStates.delete(ctx.chat.id);
+      } else if (bookingResult.error === 'slot_busy') {
+        await ctx.editMessageText(
+          '😔 Извините, это время только что заняли. Вот другие свободные окна:',
+          Markup.inlineKeyboard(
+            userState.availableSlots
+              .filter(slot => slot.formatted !== userState.selectedTime)
+              .slice(0, 5)
+              .map(slot => [
+                Markup.button.callback(
+                  `${slot.formatted}`,
+                  `time_${userState.selectedDate}_${slot.formatted}`
+                )
+              ])
+          )
+        );
+      } else {
+        throw new Error('Не удалось создать запись');
+      }
+    } catch (error) {
+      console.error('Ошибка подтверждения записи:', error);
+      await ctx.editMessageText(
+        '😔 Не удалось создать запись. Пожалуйста, попробуйте позже.',
+        Markup.inlineKeyboard([
+          [Markup.button.callback('Попробовать снова', 'retry_booking')]
+        ])
+      );
+    }
+  });
+
+  this.bot.action('cancel_booking', async (ctx) => {
+    try {
+      this.userStates.delete(ctx.chat.id);
+      await ctx.editMessageText(
+        'Запись отменена. Чтобы начать заново, нажмите "📅 Записаться".',
+        Markup.keyboard([['📅 Записаться'], ['💬 Задать вопрос']]).resize()
+      );
+    } catch (error) {
+      console.error('Ошибка отмены записи:', error);
+    }
+  });
+
+  this.bot.action('choose_date', async (ctx) => {
+    try {
+      const userState = this.userStates.get(ctx.chat.id);
+      if (!userState) {
+        await ctx.answerCbQuery('Сессия устарела');
+        return;
+      }
+
+      await this.showDateSelection(ctx, userState);
+    } catch (error) {
+      console.error('Ошибка выбора другой даты:', error);
+      await ctx.answerCbQuery('Произошла ошибка');
+    }
+  });
+
+  this.bot.action('retry_booking', async (ctx) => {
+    try {
+      await ctx.deleteMessage();
+      this.userStates.delete(ctx.chat.id);
+      await ctx.reply(
+        'Давайте попробуем снова!',
+        Markup.keyboard([['📅 Записаться'], ['💬 Задать вопрос']]).resize()
+      );
+    } catch (error) {
+      console.error('Ошибка повторной попытки:', error);
+    }
+  });
 
   setupAIHandling() {
     this.bot.on('text', async (ctx) => {
@@ -1550,6 +1831,9 @@ class DentistBot {
     try {
       if (!process.env.ADMIN_CHAT_ID) return;
 
+      const doctors = require('../config/doctors.json');
+      const doctor = userState.selectedDoctor ? doctors.doctors.find(d => d.id === userState.selectedDoctor) : null;
+
       const procedureName = userState.selectedProcedure 
         ? (userState.selectedProcedure === 'acute_pain' ? 'Острая зубная боль' :
            userState.selectedProcedure === 'broken_appliance' ? 'Сломался протез/брекет' :
@@ -1566,6 +1850,10 @@ class DentistBot {
           `📅 ${new Date(userState.selectedDate).toLocaleDateString('ru-RU')} в ${userState.selectedTime}\n` +
           `🦷 ${procedureName}\n`;
           
+        if (doctor) {
+          message += `👨‍⚕️ ${doctor.name}\n`;
+        }
+        
         if (userState.problemDescription) {
           message += `💬 "${userState.problemDescription}"\n`;
         }
@@ -1578,6 +1866,10 @@ class DentistBot {
           `📅 ${new Date(userState.selectedDate).toLocaleDateString('ru-RU')} в ${userState.selectedTime}\n` +
           `🦷 ${procedureName}\n`;
           
+        if (doctor) {
+          message += `👨‍⚕️ ${doctor.name}\n`;
+        }
+        
         if (userState.problemDescription) {
           message += `💬 "${userState.problemDescription}"\n`;
         }
@@ -1591,6 +1883,10 @@ class DentistBot {
           `📅 ${new Date(userState.selectedDate).toLocaleDateString('ru-RU')} в ${userState.selectedTime}\n` +
           `🦷 ${procedureName}\n`;
           
+        if (doctor) {
+          message += `👨‍⚕️ ${doctor.name}\n`;
+        }
+        
         if (userState.problemDescription) {
           message += `💬 "${userState.problemDescription}"\n`;
         }
