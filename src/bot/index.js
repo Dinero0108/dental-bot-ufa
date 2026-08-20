@@ -97,7 +97,7 @@ class DentistBot {
 
     this.bot.hears('ℹ️ О клинике', async (ctx) => {
       try {
-        const doctors = require('../config/doctors.json');
+        const doctors = require('../../config/doctors.json');
         const doctorsList = doctors.doctors.map(d => `• ${d.name} — ${d.specialty}`).join('\n');
 
         await ctx.reply(
@@ -337,7 +337,7 @@ class DentistBot {
         return;
       }
 
-      const doctors = require('../config/doctors.json');
+      const doctors = require('../../config/doctors.json');
       const history = patientEvents
         .sort((a, b) => new Date(a.start.dateTime || a.start.date) - new Date(b.start.dateTime || b.start.date))
         .map((event, index) => {
@@ -908,7 +908,7 @@ class DentistBot {
               );
             }
           } else {
-            const doctors = require('../config/doctors.json');
+            const doctors = require('../../config/doctors.json');
             const doctorButtons = freeDoctors.map(doctorId => {
               const doctor = doctors.doctors.find(d => d.id === doctorId);
               return [Markup.button.callback(
@@ -1116,7 +1116,7 @@ class DentistBot {
 
           await this.notifyAdminBooking(userState, patientName, userState.patientPhone);
           
-          const doctors = require('../config/doctors.json');
+          const doctors = require('../../config/doctors.json');
           const doctor = actualDoctorId ? doctors.doctors.find(d => d.id === actualDoctorId) : null;
 
           await ctx.editMessageText(
@@ -1250,7 +1250,7 @@ class DentistBot {
 
   async showDoctorSelection(ctx, userState) {
     try {
-      const doctors = require('../config/doctors.json');
+      const doctors = require('../../config/doctors.json');
       
       if (doctors.doctors.length === 1) {
         const singleDoctor = doctors.doctors[0];
@@ -1684,7 +1684,7 @@ class DentistBot {
       ? userState.familyMemberData.name 
       : userState.patientName;
 
-    const doctors = require('../config/doctors.json');
+    const doctors = require('../../config/doctors.json');
     const doctor = userState.selectedDoctor ? doctors.doctors.find(d => d.id === userState.selectedDoctor) : null;
 
     const procedureName = userState.selectedProcedure 
@@ -1828,7 +1828,7 @@ class DentistBot {
     try {
       if (!process.env.ADMIN_CHAT_ID) return;
 
-      const doctors = require('../config/doctors.json');
+      const doctors = require('../../config/doctors.json');
       const doctor = userState.selectedDoctor ? doctors.doctors.find(d => d.id === userState.selectedDoctor) : null;
 
       const procedureName = userState.selectedProcedure 
