@@ -583,15 +583,12 @@ class DentistBot {
 
         this.userStates.set(ctx.chat.id, {
           ...userState,
-          state: 'new_problem_description',
+          state: 'choose_procedure',
           priority: 'normal',
           problemType: 'new'
         });
 
-        await ctx.editMessageText(
-          '🔍 Понял. Опишите проблему (необязательно):',
-          Markup.removeKeyboard()
-        );
+        await this.showProcedureSelection(ctx, userState);
       } catch (error) {
         console.error('Ошибка выбора новой проблемы:', error);
         await ctx.answerCbQuery('Произошла ошибка');
