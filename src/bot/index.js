@@ -80,8 +80,17 @@ class DentistBot {
           case 'awaiting_name':
             await this.handleAwaitingName(ctx, text, userState);
             break;
+          case 'awaiting_name_other':
+            await this.handleAwaitingNameOther(ctx, text, userState);
+            break;
           case 'awaiting_phone':
             await this.handleAwaitingPhone(ctx, text, userState);
+            break;
+          case 'describe_routine':
+            await this.handleDescribeRoutine(ctx, text, userState);
+            break;
+          case 'describe_problem':
+            await this.handleDescribeProblem(ctx, text, userState);
             break;
         }
       } catch (error) {
@@ -134,7 +143,7 @@ class DentistBot {
         await ctx.reply(
           '🏥 Наша стоматологическая клиника\n\n' +
           '• Современное оборудование\n' +
-          '• Опытные специалисты\n' +
+          '• Опытные специалиists\n' +
           '• Безболезненное лечение\n' +
           '• Удобное расположение\n\n' +
           `Наши врачи:\n${doctorsList}\n\n` +
@@ -164,9 +173,9 @@ class DentistBot {
         if (this.userStates.has(userId)) return;
 
         await ctx.reply(
-          '💬 Задайте ваш вопрос о процедуры, ценах или записи.\n\n' +
+          '💬 Задайте ваш вопрос о процедурах, ценах или записи.\n\n' +
           'Я постараюсь помочь или предложу записаться на консультацию.',
-          undefined
+          Markup.removeKeyboard()
         );
         this.userStates.set(ctx.chat.id, { state: 'awaiting_question' });
       } catch (error) {
@@ -276,7 +285,7 @@ class DentistBot {
       `/changename — изменить имя\n` +
       `/changephone — изменить телефон\n` +
       `/myhistory — история визитов`,
-      undefined
+      Markup.removeKeyboard()
     );
   }
 
@@ -299,7 +308,7 @@ class DentistBot {
     await ctx.reply(
       '👨‍👩‍👧‍👦 Добавление члена семьи\n\n' +
       'Укажите родственную связь (например: жена, сын, дочь, муж):',
-      undefined
+      Markup.removeKeyboard()
     );
   }
 
@@ -322,7 +331,7 @@ class DentistBot {
     await ctx.reply(
       '📝 Изменение имени\n\n' +
       'Введите ваше новое имя:',
-      undefined
+      Markup.removeKeyboard()
     );
   }
 
@@ -345,7 +354,7 @@ class DentistBot {
     await ctx.reply(
       '📞 Изменение телефона\n\n' +
       'Введите ваш новый номер телефона (формат: +7XXXXXXXXXX или 8XXXXXXXXXX):',
-      undefined
+      Markup.removeKeyboard()
     );
   }
 
@@ -381,7 +390,7 @@ class DentistBot {
           '📋 История визитов:\n\n' +
           'Записей в календаре не найдено.\n\n' +
           `Всего визитов в профиле: ${patient.visitsCount}`,
-          undefined
+          Markup.removeKeyboard()
         );
         return;
       }
@@ -402,7 +411,7 @@ class DentistBot {
       await ctx.reply(
         `📋 История визитов:\n\n${history}\n\n` +
         `Всего визитов в профиле: ${patient.visitsCount}`,
-        undefined
+        Markup.removeKeyboard()
       );
     } catch (error) {
       console.error('Ошибка получения истории:', error);
@@ -410,7 +419,7 @@ class DentistBot {
         `📋 История визитов:\n\n` +
         `Не удалось загрузить записи из календаря.\n\n` +
         `Всего визитов в профиле: ${patient.visitsCount}`,
-        undefined
+        Markup.removeKeyboard()
       );
     }
   }
@@ -441,24 +450,20 @@ class DentistBot {
         const patient = userState.patientData;
         
         this.userStates.set(userId, {
-          state: 'choosing_doctor',
-          patientId: userId,
-          patientData: patient,
+          state: 'qualification',
           name: patient.name,
-          phone: patient.phone
+          phone: patient.phone,
+          patientId: userId,
+          patientData: patient
         });
 
         await ctx.editMessageText(
-          `Отлично, ${patient.name}! Выберите врача:`,
-          undefined
+          'Скажите, вы уже проходили лечение в нашей клинике?',
+          Markup.inlineKeyboard([
+            [Markup.button.callback('✅ Да, постоянный пациент', 'qual_returning')],
+            [Markup.button.callback('❌ Нет, впервые', 'qual_new')]
+          ])
         );
-
-        await this.showDoctorSelection(ctx, {
-          patientId: userId,
-          patientData: patient,
-          name: patient.name,
-          phone: patient.phone
-        });
       } catch (error) {
         console.error('Ошибка выбора себя:', error);
         await ctx.answerCbQuery('Произошла ошибка');
@@ -476,12 +481,231 @@ class DentistBot {
         }
 
         this.userStates.set(userId, {
+          ...userState,
+          state: 'awaiting_name_other',
+          forOther: true
+        });
+
+        await ctx.editMessageText('👤 Введите имя другого человека для записи:');
+      } catch (error) {
+        console.error('Ошибка выбора другого человека:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action('record_as_new', async (ctx) => {
+      try {
+        const userId = ctx.chat.id.toString();
+        const userState = this.userStates.get(userId);
+        
+        if (!userState || userState.state !== 'choosing_person') {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(userId, {
           state: 'awaiting_name'
         });
 
-        await ctx.editMessageText('👤 Введите имя человека для записи:');
+        await ctx.editMessageText('👤 Введите ваше имя:');
       } catch (error) {
-        console.error('Ошибка выбора другого человека:', error);
+        console.error('Ошибка записи как нового:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action('qual_returning', async (ctx) => {
+      try {
+        const userId = ctx.chat.id.toString();
+        const userState = this.userStates.get(userId);
+        
+        if (!userState || userState.state !== 'qualification') {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(userId, {
+          ...userState,
+          state: 'returning_choice',
+          isReturningPatient: true
+        });
+
+        await ctx.editMessageText(
+          '🤖 Что у вас сейчас?',
+          Markup.inlineKeyboard([
+            [Markup.button.callback('🚨 Острая боль / срочно', 'problem_urgent')],
+            [Markup.button.callback('🦷 Плановая коррекция', 'problem_routine')],
+            [Markup.button.callback('🔍 Новая проблема', 'problem_new')]
+          ])
+        );
+      } catch (error) {
+        console.error('Ошибка выбора постоянного пациента:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action('qual_new', async (ctx) => {
+      try {
+        const userId = ctx.chat.id.toString();
+        const userState = this.userStates.get(userId);
+        
+        if (!userState || userState.state !== 'qualification') {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(userId, {
+          ...userState,
+          state: 'choosing_procedure',
+          mode: 'first'
+        });
+
+        await this.showProcedureSelection(ctx, 'first');
+      } catch (error) {
+        console.error('Ошибка выбора нового пациента:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action('problem_urgent', async (ctx) => {
+      try {
+        const userId = ctx.chat.id.toString();
+        const userState = this.userStates.get(userId);
+        
+        if (!userState || userState.state !== 'returning_choice') {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(userId, {
+          ...userState,
+          state: 'choosing_procedure',
+          mode: 'urgent'
+        });
+
+        const urgentProcedures = [
+          { id: 'acute_pain', name: 'Острая зубная боль', price: 'от 2500₽' },
+          { id: 'broken', name: 'Сломался протез/брекет', price: 'от打开请使用中文3000₽' },
+          { id: 'bleeding', name: 'Кровотечение', price: 'от 2000₽' }
+        ];
+
+        await this.showProcedureSelection(ctx, 'urgent', urgentProcedures);
+      } catch (error) {
+        console.error('Ошибка выбора срочной проблемы:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action('problem_routine', async (ctx) => {
+      try {
+        const userId = ctx.chat.id.toString();
+        const userState = this.userStates.get(userId);
+        
+        if (!userState || userState.state !== 'returning_choice') {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(userId, {
+          ...userState,
+          state: 'describe_routine'
+        });
+
+        await ctx.editMessageText('Опишите кратко что корректируем:');
+      } catch (error) {
+        console.error('Ошибка выбора плановой коррекции:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action('problem_new', async (ctx) => {
+      try {
+        const userId = ctx.chat.id.toString();
+        const userState = this.userStates.get(userId);
+        
+        if (!userState || userState.state !== 'returning_choice') {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(userId, {
+          ...userState,
+          state: 'describe_problem'
+        });
+
+        await ctx.editMessageText('Опишите вашу проблему:');
+      } catch (error) {
+        console.error('Ошибка выбора новой проблемы:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action('back_to_qualification', async (ctx) => {
+      try {
+        const userId = ctx.chat.id.toString();
+        const userState = this.userStates.get(userId);
+        
+        if (!userState || userState.state !== 'choosing_procedure') {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        this.userStates.set(userId, {
+          ...userState,
+          state: 'qualification'
+        });
+
+        await ctx.editMessageText(
+          'Скажите, вы уже проходили лечение в нашей клинике?',
+          Markup.inlineKeyboard([
+            [Markup.button.callback('✅ Да, постоянный пациент', 'qual_returning')],
+            [Markup.button.callback('❌ Нет, впервые', 'qual_new')]
+          ])
+        );
+      } catch (error) {
+        console.error('Ошибка возврата к квалификации:', error);
+        await ctx.answerCbQuery('Произошла ошибка');
+      }
+    });
+
+    this.bot.action(/proc_(.+)/, async (ctx) => {
+      try {
+        const procedureId = ctx.match[1];
+        const userId = ctx.chat.id.toString();
+        const userState = this.userStates.get(userId);
+        
+        if (!userState || userState.state !== 'choosing_procedure') {
+          await ctx.answerCbQuery('Сессия устарела');
+          return;
+        }
+
+        let procedureData;
+        if (userState.mode === 'urgent') {
+          const urgentProcedures = [
+            { id: 'acute_pain', name: 'Острая зубная боль', price: 'от 2500₽' },
+            { id: 'broken', name: 'Сломался протез/брекет', price: 'от 3000₽' },
+            { id: 'bleeding', name: 'Кровотечение', price: 'от 2000₽' }
+          ];
+          procedureData = urgentProcedures.find(p => p.id === procedureId);
+        } else {
+          const procedures = aiService.getProcedures();
+          procedureData = procedures.find(p => p.id === procedureId);
+        }
+
+        if (!procedureData) {
+          await ctx.answerCbQuery('Процедура не найдена');
+          return;
+        }
+
+        this.userStates.set(userId, {
+          ...userState,
+          state: 'choosing_doctor',
+          procedure: procedureData
+        });
+
+        await this.showDoctorSelection(ctx, userState);
+      } catch (error) {
+        console.error('Ошибка выбора процедуры:', error);
         await ctx.answerCbQuery('Произошла ошибка');
       }
     });
@@ -728,19 +952,34 @@ class DentistBot {
           {
             name: userState.name,
             phone: userState.phone,
-            priority: 'normal',
-            problemDescription: '',
-            isReturningPatient: false
+            priority: userState.mode === 'urgent' ? 'urgent' : 'normal',
+            problemDescription: userState.problemDescription || '',
+            isReturningPatient: userState.isReturningPatient || false
           },
-          'consultation',
+          userState.procedure?.id || 'consultation',
           userState.doctorId === 'any' ? (slot?.freeDoctors?.[0] || null) : userState.doctorId
         );
 
         if (bookingResult.success) {
           if (userState.patientId) {
+            await patientsService.updatePatient(userState.patientId, {
+              lastMode: userState.mode,
+              lastProcedure: userState.procedure?.name || 'consultation'
+            });
+            
             await patientsService.incrementVisitsCount(userState.patientId, {
-              procedure: 'consultation',
-              notes: ''
+              procedure: userState.procedure?.name || 'consultation',
+              notes: userState.problemDescription || ''
+            });
+          } else {
+            await patientsService.savePatient(userId, {
+              name: userState.name,
+              phone: userState.phone,
+              lastMode: userState.mode,
+              medicalHistory: {
+                isReturningPatient: userState.isReturningPatient || false,
+                lastProcedure: userState.procedure?.name || 'consultation'
+              }
             });
           }
 
@@ -748,12 +987,22 @@ class DentistBot {
           const doctorId = userState.doctorId === 'any' ? (slot?.freeDoctors?.[0] || null) : userState.doctorId;
           const doctor = doctorId ? doctors.doctors.find(d => d.id === doctorId) : null;
 
+          let adminPrefix = '';
+          if (userState.mode === 'urgent') {
+            adminPrefix = '🚨 СРОЧНО — ';
+          } else if (userState.mode === 'routine') {
+            adminPrefix = '🦷 Плановая коррекция — ';
+          } else {
+            adminPrefix = '🆕 Новая запись — ';
+          }
+
           await ctx.editMessageText(
             `✅ Запись успешно создана!\n\n` +
             `Ваша запись подтверждена на:\n` +
             `📅 ${new Date(dateStr).toLocaleDateString('ru-RU')} в ${timeStr}\n` +
             `👨‍⚕️ ${doctor ? doctor.name : 'Любой свободный врач'}\n` +
-            `👤 ${userState.name}\n\n` +
+            `👤 ${userState.name}\n` +
+            (userState.procedure ? `🦷 ${userState.procedure.name}\n` : '') +
             `Мы ждём вас в клинике!`
           );
 
@@ -761,10 +1010,12 @@ class DentistBot {
             try {
               await this.bot.telegram.sendMessage(
                 process.env.ADMIN_CHAT_ID,
-                `🆕 Новая запись\n\n` +
+                `${adminPrefix}\n\n` +
                 `👤 ${userState.name} (${userState.phone})\n` +
                 `📅 ${new Date(dateStr).toLocaleDateString('ru-RU')} в ${timeStr}\n` +
-                (doctor ? `👨‍⚕️ ${doctor.name}\n` : '')
+                (doctor ? `👨‍⚕️ ${doctor.name}\n` : '') +
+                (userState.procedure ? `🦷 ${userState.procedure.name}\n` : '') +
+                (userState.problemDescription ? `💬 ${userState.problemDescription.substring(0,整個錯誤處理部分需要修復。讓我檢查當前文件並正確重寫部分: 200)}\n` : '')
               );
             } catch (error) {
               console.error('Ошибка уведомления админа:', error);
@@ -827,23 +1078,22 @@ class DentistBot {
       const patient = patientsService.getPatient(userId);
       
       if (patient) {
+        this.userStates.set(userId, { 
+          state: 'choosing_person',
+          patientData: patient 
+        });
+        
         await ctx.reply(
-          `Здравствуйте, ${patient.name}! 👋 Кого запишем?`,
+          `Здравствуйте, ${patient.name}! 👋\nКого запишем?`,
           Markup.inlineKeyboard([
             [Markup.button.callback('👤 Себя', 'record_self')],
-            [Markup.button.callback('➕ Другой человек', 'record_other')]
+            [Markup.button.callback('👨‍👩‍👧 Другого человека', 'record_other')],
+            [Markup.button.callback('🔍 Записаться как новый', 'record_as_new')]
           ])
         );
-        
-        this.userStates.set(userId, {
-          state: 'choosing_person',
-          patientData: patient
-        });
       } else {
+        this.userStates.set(userId, { state: 'awaiting_name' });
         await ctx.reply('👤 Введите ваше имя:');
-        this.userStates.set(userId, {
-          state: 'awaiting_name'
-        });
       }
     } catch (error) {
       console.error('Ошибка старта записи:', error);
@@ -875,6 +1125,31 @@ class DentistBot {
     }
   }
 
+  async handleAwaitingNameOther(ctx, text, userState) {
+    try {
+      const userId = ctx.chat.id.toString();
+      
+      if (text.length < 2 || /^\d+$/.test(text)) {
+        await ctx.reply('Пожалуйста, введите имя (минимум 2 символа, не только цифры):');
+        return;
+      }
+
+      const name = text.trim();
+      
+      this.userStates.set(userId, {
+        ...userState,
+        state: 'awaiting_phone',
+        name: name,
+        forOther: true
+      });
+
+      await ctx.reply(`Отлично! Введите телефон ${name}:`);
+    } catch (error) {
+      console.error('Ошибка обработки имени другого:', error);
+      await ctx.reply('Произошла ошибка при обработки имени.');
+    }
+  }
+
   async handleAwaitingPhone(ctx, text, userState) {
     try {
       const userId = ctx.chat.id.toString();
@@ -889,33 +1164,96 @@ class DentistBot {
 
       const formattedPhone = cleanPhone.startsWith('8') ? '+7' + cleanPhone.slice(1) : cleanPhone;
       
-      const patientData = {
-        name: userState.name,
-        phone: formattedPhone,
-        createdAt: new Date().toISOString()
-      };
-
-      await patientsService.savePatient(userId, patientData);
-
-      const patient = patientsService.getPatient(userId);
-      
       this.userStates.set(userId, {
-        state: 'choosing_doctor',
-        patientId: userId,
-        patientData: patient,
-        name: userState.name,
+        ...userState,
+        state: 'qualification',
         phone: formattedPhone
       });
 
-      await this.showDoctorSelection(ctx, {
-        patientId: userId,
-        patientData: patient,
-        name: userState.name,
-        phone: formattedPhone
-      });
+      await ctx.reply(
+        'Скажите, вы уже проходили лечение в нашей клинике?',
+        Markup.inlineKeyboard([
+          [Markup.button.callback('✅ Да, постоянный пациент', 'qual_returning')],
+          [Markup.button.callback('❌ Нет, впервые', 'qual_new')]
+        ])
+      );
     } catch (error) {
       console.error('Ошибка обработки телефона:', error);
       await ctx.reply('Произошла ошибка при обработки телефона.');
+    }
+  }
+
+  async handleDescribeRoutine(ctx, text, userState) {
+    try {
+      const userId = ctx.chat.id.toString();
+      
+      this.userStates.set(userId, {
+        ...userState,
+        state: 'choosing_procedure',
+        mode: 'routine',
+        problemDescription: text.trim()
+      });
+
+      await this.showProcedureSelection(ctx, 'routine');
+    } catch (error) {
+      console.error('Ошибка обработки описания рутины:', error);
+      await ctx.reply('Произошла ошибка при обработки описания.');
+    }
+  }
+
+  async handleDescribeProblem(ctx, text, userState) {
+    try {
+      const userId = ctx.chat.id.toString();
+      
+      this.userStates.set(userId, {
+        ...userState,
+        state: 'choosing_procedure',
+        mode: 'new',
+        problemDescription: text.trim()
+      });
+
+      await this.showProcedureSelection(ctx, 'new');
+    } catch (error) {
+      console.error('Ошибка обработки описания проблемы:', error);
+      await ctx.reply('Произошла ошибка при обработки описания.');
+    }
+  }
+
+  async showProcedureSelection(ctx, mode, proceduresList = null) {
+    try {
+      const userId = ctx.chat.id.toString();
+      const userState = this.userStates.get(userId);
+      
+      if (!userState) {
+        return;
+      }
+
+      let procs = proceduresList;
+      if (!procs) {
+        const allProcedures = aiService.getProcedures();
+        procs = allProcedures.map(p => ({
+          id: p.id,
+          name: p.название,
+          price: p.цена
+        }));
+      }
+
+      const buttons = procs.map(p => [
+        Markup.button.callback(
+          `${p.name} — ${p.price}`, 
+          `proc_${p.id}`
+        )
+      ]);
+
+      buttons.push([Markup.button.callback('↩️ Назад', 'back_to_qualification')]);
+
+      await ctx.reply(
+        'Выберите процедуру:',
+        Markup.inlineKeyboard(buttons)
+      );
+    } catch (error) {
+      console.error('Ошибка показа процедур:', error);
+      await ctx.reply('Произошла ошибка при загрузке процедур.');
     }
   }
 
@@ -1036,7 +1374,8 @@ class DentistBot {
           
           this.userStates.delete(ctx.chat.id);
         } else if (!userState || ![
-          'awaiting_name', 'awaiting_phone'
+          'awaiting_name', 'awaiting_name_other', 'awaiting_phone',
+          'describe_routine', 'describe_problem'
         ].includes(userState.state)) {
           if (ctx.message.text !== '📅 Записаться' && 
               ctx.message.text !== '💬 Задать вопрос' && 
