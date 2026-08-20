@@ -47,80 +47,97 @@ class CalendarService {
 
     try {
       const schedule = require('../../config/schedule.json');
-      const slotDuration = schedule.длина_слота_минут * 60 * 1000;
-
-      const dayOfWeek = date.toLocaleDateString('ru-RU', { weekday: 'long' }).toLowerCase();
-      if (schedule.выходные.includes(dayOfWeek)) {
-        return { date: date.toISOString().split('T')[0], slots: [], nextAvailable: null };
+      
+      const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+      if (schedule.daysOff.includes(dayOfWeek)) {
+        console.log(`📅 [${date.toISOString().split('T')[0]}] Выходной день (${dayOfWeek})`);
+        return { date: date.toISOString().split('T')[0], slots: [] };
       }
 
-      const startTime = new Date(date);
-      const [startHour, startMinute] = schedule.рабочие_часы.начало.split(':').map(Number);
-      startTime.setHours(startHour, startMinute, 0, 0);
+      const [workStartHour, workStartMinute] = schedule.workStart.split(':').map(Number);
+      const [workEndHour, workEndMinute] = schedule.workEnd.split(':').map(Number);
+      const slotDuration = schedule.slotMinutes * 60 * 1000;
 
-      const endTime = new Date(date);
-      const [endHour, endMinute] = schedule.рабочие_часы.конец.split(':').map(Number);
-      endTime.setHours(endHour, endMinute, 0, 0);
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
 
-      const lunchStart = new Date(date);
-      const [lunchStartHour, lunchStartMinute] = schedule.обеденный_перерыв.начало.split(':').map(Number);
-      lunchStart.setHours(lunchStartHour, lunchStartMinute, 0, 0);
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
 
-      const lunchEnd = new Date(date);
-      const [lunchEndHour, lunchEndMinute] = schedule.обеденный_перерыв.конец.split(':').map(Number);
-      lunchEnd.setHours(lunchEndHour, lunchEndMinute, 0, 0);
-
-      const requestBody = {
-        timeMin: startTime.toISOString(),
-        timeMax: endTime.toISOString(),
-        timeZone: 'Europe/Moscow',
-        items: [{ id: this.calendarId }],
-      };
-
-      const response = await this.calendar.freebusy.query({
-        requestBody,
+      const response = await this.calendar.events.list({
+        calendarId: this.calendarId,
+        timeMin: startOfDay.toISOString(),
+        timeMax: endOfDay.toISOString(),
+        singleEvents: true,
+        orderBy: 'startTime',
       });
 
-      const busySlots = response.data.calendars[this.calendarId]?.busy || [];
+      const busyIntervals = [];
+      const now = new Date();
+      const isToday = date.toDateString() === now.toDateString();
+
+      response.data.items.forEach(event => {
+        const start = event.start.dateTime ? new Date(event.start.dateTime) : null;
+        const end = event.end.dateTime ? new Date(event.end.dateTime) : null;
+        
+        if (start && end && start < endOfDay && end > startOfDay) {
+          busyIntervals.push({ start, end });
+        }
+      });
 
       const allSlots = [];
-      let currentTime = new Date(startTime);
+      const slotStart = new Date(date);
+      slotStart.setHours(workStartHour, workStartMinute, 0, 0);
 
-      while (currentTime < endTime) {
-        const slotEnd = new Date(currentTime.getTime() + slotDuration);
+      const slotEnd = new Date(date);
+      slotEnd.setHours(workEndHour, workEndMinute, 0, 0);
 
-        if (slotEnd <= lunchStart || currentTime >= lunchEnd) {
-          const isBusy = busySlots.some(busy => {
-            const busyStart = new Date(busy.start);
-            const busyEnd = new Date(busy.end);
-            return (currentTime >= busyStart && currentTime < busyEnd) ||
-                   (slotEnd > busyStart && slotEnd <= busyEnd) ||
-                   (currentTime <= busyStart && slotEnd >= busyEnd);
+      let currentTime = new Date(slotStart);
+
+      while (currentTime < slotEnd) {
+        const slotEndTime = new Date(currentTime.getTime() + slotDuration);
+        
+        if (slotEndTime > slotEnd) {
+          break;
+        }
+
+        const lunchStart = new Date(date);
+        const [lunchStartHour, lunchStartMinute] = schedule.lunchBreak.start.split(':').map(Number);
+        lunchStart.setHours(lunchStartHour, lunchStartMinute, 0, 0);
+
+        const lunchEnd = new Date(date);
+        const [lunchEndHour, lunchEndMinute] = schedule.lunchBreak.end.split(':').map(Number);
+        lunchEnd.setHours(lunchEndHour, lunchEndMinute, 0, 0);
+
+        if (currentTime >= lunchStart && currentTime < lunchEnd) {
+          currentTime = new Date(lunchEnd);
+          continue;
+        }
+
+        const isSlotBusy = busyIntervals.some(busy => {
+          return currentTime < busy.end && slotEndTime > busy.start;
+        });
+
+        const isPastSlot = isToday && currentTime < now;
+
+        if (!isSlotBusy && !isPastSlot) {
+          allSlots.push({
+            start: new Date(currentTime),
+            end: new Date(slotEndTime),
+            formatted: currentTime.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
           });
-
-          if (!isBusy) {
-            allSlots.push({
-              start: new Date(currentTime),
-              end: new Date(slotEnd),
-              formatted: currentTime.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
-            });
-          }
         }
 
         currentTime = new Date(currentTime.getTime() + slotDuration);
       }
 
-      const availableSlots = allSlots.slice(0, 5);
+      const freeSlots = allSlots.slice(0, 6);
 
-      let nextAvailableDate = null;
-      if (availableSlots.length === 0) {
-        nextAvailableDate = await this.findNextAvailableDate(date);
-      }
+      console.log(`📅 [${date.toISOString().split('T')[0]}] Занято слотов: ${busyIntervals.length}, Свободно: ${freeSlots.length}`);
 
       return {
         date: date.toISOString().split('T')[0],
-        slots: availableSlots,
-        nextAvailable: nextAvailableDate
+        slots: freeSlots
       };
     } catch (error) {
       console.error('Ошибка при получении свободных слотов:', error);
@@ -128,32 +145,85 @@ class CalendarService {
     }
   }
 
-  async findNextAvailableDate(startDate) {
-    if (!this.initialized) return null;
+  async findNextAvailableSlots(startDate) {
+    if (!this.initialized) return [];
 
-    const schedule = require('../../config/schedule.json');
-    let currentDate = new Date(startDate);
-    
-    for (let i = 0; i < 14; i++) {
-      currentDate.setDate(currentDate.getDate() + 1);
-      const dayOfWeek = currentDate.toLocaleDateString('ru-RU', { weekday: 'long' }).toLowerCase();
+    try {
+      const schedule = require('../../config/schedule.json');
+      const results = [];
+      let currentDate = new Date(startDate);
       
-      if (!schedule.выходные.includes(dayOfWeek)) {
-        try {
-          const slots = await this.getFreeSlots(currentDate);
-          if (slots.slots.length > 0) {
-            return {
-              date: currentDate.toISOString().split('T')[0],
-              slots: slots.slots
-            };
+      for (let i = 0; i < schedule.bookingDaysAhead; i++) {
+        currentDate.setDate(currentDate.getDate() + 1);
+        const dayOfWeek = currentDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+        
+        if (!schedule.daysOff.includes(dayOfWeek)) {
+          try {
+            const slots = await this.getFreeSlots(currentDate);
+            if (slots.slots.length > 0) {
+              results.push({
+                date: currentDate.toISOString().split('T')[0],
+                dateFormatted: currentDate.toLocaleDateString('ru-RU'),
+                slots: slots.slots.slice(0, 3)
+              });
+              
+              if (results.length >= 3) break;
+            }
+          } catch (error) {
+            continue;
           }
-        } catch (error) {
-          continue;
         }
       }
+      
+      return results;
+    } catch (error) {
+      console.error('Ошибка поиска ближайших свободных дней:', error);
+      return [];
     }
-    
-    return null;
+  }
+
+  async checkSlotAvailability(date, time, durationMinutes) {
+    if (!this.initialized || !this.calendar) {
+      throw new Error('Google Calendar не инициализирован');
+    }
+
+    try {
+      const [hours, minutes] = time.split(':').map(Number);
+      const startDateTime = new Date(date);
+      startDateTime.setHours(hours, minutes, 0, 0);
+
+      const endDateTime = new Date(startDateTime.getTime() + durationMinutes * 60 * 1000);
+
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const endOfDay = new Date(date);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const response = await this.calendar.events.list({
+        calendarId: this.calendarId,
+        timeMin: startOfDay.toISOString(),
+        timeMax: endOfDay.toISOString(),
+        singleEvents: true,
+        orderBy: 'startTime',
+      });
+
+      const busyIntervals = response.data.items
+        .filter(event => event.start.dateTime && event.end.dateTime)
+        .map(event => ({
+          start: new Date(event.start.dateTime),
+          end: new Date(event.end.dateTime)
+        }));
+
+      const isSlotBusy = busyIntervals.some(busy => {
+        return startDateTime < busy.end && endDateTime > busy.start;
+      });
+
+      return !isSlotBusy;
+    } catch (error) {
+      console.error('Ошибка проверки доступности слота:', error);
+      throw error;
+    }
   }
 
   async createBooking(date, time, patient, procedure) {
@@ -162,20 +232,50 @@ class CalendarService {
     }
 
     try {
-      const startDateTime = new Date(date);
-      const [hours, minutes] = time.split(':').map(Number);
-      startDateTime.setHours(hours, minutes, 0, 0);
-
-      const schedule = require('../../config/schedule.json');
       const procedures = require('../../config/procedures.json');
       const procedureData = procedures.процедуры.find(p => p.id === procedure);
       const durationMinutes = procedureData ? procedureData.длительность_минут : 30;
 
+      const isAvailable = await this.checkSlotAvailability(date, time, durationMinutes);
+      
+      if (!isAvailable) {
+        return {
+          success: false,
+          error: 'slot_busy',
+          message: 'Время уже занято'
+        };
+      }
+
+      const startDateTime = new Date(date);
+      const [hours, minutes] = time.split(':').map(Number);
+      startDateTime.setHours(hours, minutes, 0, 0);
+
       const endDateTime = new Date(startDateTime.getTime() + durationMinutes * 60 * 1000);
 
+      let summary = '';
+      if (patient.priority === 'urgent') {
+        summary = `🚨 СРОЧНО — ${patient.name}, ${patient.phone}`;
+      } else if (patient.isReturningPatient) {
+        summary = `${procedureData?.название || 'Процедура'} — ${patient.name} (постоянный пациент)`;
+      } else {
+        summary = `${procedureData?.название || 'Процедура'} — ${patient.name}, ${patient.phone}`;
+      }
+
+      let description = `Пациент: ${patient.name}\nТелефон: ${patient.phone}\nПроцедура: ${procedureData?.название || 'Не указана'}`;
+      
+      if (patient.priority === 'urgent') {
+        description += `\nПроблема: ${patient.problemDescription || 'Не указана'}\nВНЕ ОЧЕРЕДИ`;
+      } else if (patient.isReturningPatient && patient.problemDescription) {
+        description += `\nПримечание: ${patient.problemDescription}\nПостоянный пациент`;
+      } else if (patient.problemDescription) {
+        description += `\nПримечание: ${patient.problemDescription}`;
+      }
+      
+      description += `\nСоздано через Telegram-бота`;
+
       const event = {
-        summary: `${procedureData?.название || 'Процедура'} — ${patient.name}, ${patient.phone}`,
-        description: `Пациент: ${patient.name}\nТелефон: ${patient.phone}\nПроцедура: ${procedureData?.название || 'Не указана'}\nЦена: ${procedureData?.цена || 'Не указана'}\nСоздано через Telegram-бота`,
+        summary,
+        description,
         start: {
           dateTime: startDateTime.toISOString(),
           timeZone: 'Europe/Moscow',
@@ -203,6 +303,15 @@ class CalendarService {
       };
     } catch (error) {
       console.error('Ошибка при создании записи:', error);
+      
+      if (error.message.includes('slot_busy')) {
+        return {
+          success: false,
+          error: 'slot_busy',
+          message: 'Время уже занято'
+        };
+      }
+      
       throw error;
     }
   }

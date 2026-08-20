@@ -1,6 +1,7 @@
 require('dotenv').config();
 const calendarService = require('./src/services/calendar');
 const aiService = require('./src/services/ai');
+const patientsService = require('./src/services/patients');
 const bot = require('./src/bot');
 
 async function main() {
@@ -19,7 +20,11 @@ async function main() {
     await aiService.initialize();
     console.log('✅ AI подключен');
 
-    console.log('4. Запуск бота...');
+    console.log('4. Проверка CRM...');
+    await patientsService.initialize();
+    console.log('✅ CRM система подключена');
+
+    console.log('5. Запуск бота...');
     await bot.start();
 
     console.log('\n✅ Бот успешно запущен!');
