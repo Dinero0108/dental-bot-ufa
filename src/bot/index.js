@@ -1589,7 +1589,7 @@ class DentistBot {
         ]
       ])
     );
-  }
+  },
 
   this.bot.action('confirm_booking', async (ctx) => {
     try {
