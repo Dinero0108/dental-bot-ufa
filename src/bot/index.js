@@ -585,7 +585,7 @@ class DentistBot {
 
         const urgentProcedures = [
           { id: 'acute_pain', name: 'Острая зубная боль', price: 'от 2500₽' },
-          { id: 'broken', name: 'Сломался протез/брекет', price: 'от打开请使用中文3000₽' },
+          { id: 'broken', name: 'Сломался протез/брекет', price: 'от 3000₽' },
           { id: 'bleeding', name: 'Кровотечение', price: 'от 2000₽' }
         ];
 
@@ -1015,7 +1015,7 @@ class DentistBot {
                 `📅 ${new Date(dateStr).toLocaleDateString('ru-RU')} в ${timeStr}\n` +
                 (doctor ? `👨‍⚕️ ${doctor.name}\n` : '') +
                 (userState.procedure ? `🦷 ${userState.procedure.name}\n` : '') +
-                (userState.problemDescription ? `💬 ${userState.problemDescription.substring(0,整個錯誤處理部分需要修復。讓我檢查當前文件並正確重寫部分: 200)}\n` : '')
+                (userState.problemDescription ? `💬 ${userState.problemDescription.substring(0, 200)}\n` : '')
               );
             } catch (error) {
               console.error('Ошибка уведомления админа:', error);
