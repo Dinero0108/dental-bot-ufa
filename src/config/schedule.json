@@ -1,0 +1,11 @@
+{
+  "workStart": "09:00",
+  "workEnd": "20:00",
+  "slotMinutes": 30,
+  "daysOff": ["sunday"],
+  "bookingDaysAhead": 7,
+  "lunchBreak": {
+    "start": "13:00",
+    "end": "14:00"
+  }
+}
