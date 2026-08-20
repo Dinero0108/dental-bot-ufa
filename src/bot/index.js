@@ -1908,7 +1908,20 @@ class DentistBot {
     }
 
     try {
-      await this.bot.launch();
+      for (let attempt = 1; attempt <= 5; attempt++) {
+  try {
+    await this.bot.launch();
+    break;
+  } catch (err) {
+    const is409 = String(err.message).includes('409');
+    if (is409 && attempt < 5) {
+      console.log(`⚠️ Конфликт polling (попытка ${attempt}). Жду 10 сек...`);
+      await new Promise(r => setTimeout(r, 10000));
+    } else {
+      throw err;
+    }
+  }
+}
       console.log('🤖 Бот запущен');
       
       process.once('SIGINT', () => this.bot.stop('SIGINT'));
