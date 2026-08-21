@@ -63,6 +63,14 @@ class DentistBot {
   setupMiddleware() {
     this.bot.on('text', async (ctx, next) => {
       try {
+        const chatId = ctx.chat.id.toString();
+        const text = ctx.message.text;
+        
+        if (text.startsWith('/') || ['📅 Записаться', '💬 Задать вопрос', '👤 Мой профиль', 'ℹ️ Информация'].includes(text)) {
+          this.userStates.delete(chatId);
+          return await next();
+        }
+
         const userId = ctx.chat.id.toString();
         const userState = this.userStates.get(userId);
         
@@ -112,6 +120,7 @@ class DentistBot {
   setupCommands() {
     this.bot.start(async (ctx) => {
       try {
+        this.userStates.delete(ctx.chat.id.toString());
         await ctx.reply(
           '👋 Добро пожаловать в стоматологическую клинику!\n\n' +
           'Я помогу вам:\n' +
