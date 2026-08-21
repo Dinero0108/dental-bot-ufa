@@ -64,7 +64,7 @@ class DentistBot {
     this.bot.on('text', async (ctx, next) => {
       try {
         const chatId = ctx.chat.id.toString();
-        const text = ctx.message.text;
+        const text = (ctx.message.text || '').trim();
         
         if (text.startsWith('/') || ['📅 Записаться', '💬 Задать вопрос', '👤 Мой профиль', 'ℹ️ Информация'].includes(text)) {
           this.userStates.delete(chatId);
@@ -77,8 +77,6 @@ class DentistBot {
         if (!userState || !userState.state) {
           return await next();
         }
-
-        const text = ctx.message.text;
         
         if (['📅 Записаться', '💬 Задать вопрос', 'ℹ️ О клинике', '👤 Мой профиль'].includes(text)) {
           return await next();
