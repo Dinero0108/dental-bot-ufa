@@ -2,12 +2,17 @@ const { google } = require('googleapis');
 const fs = require('fs').promises;
 const path = require('path');
 
-class CalendarService {
-  constructor() {
-    this.calendar = null;
-    this.calendarId = process.env.GOOGLE_CALENDAR_ID;
-    this.serviceAccountJson = null;
-    this.initialized = false;
+  clinicMoment(dateStr, timeStr) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const [hh, mm] = timeStr.split(':').map(Number);
+    return new Date(Date.UTC(y, m - 1, d, hh - 5, mm));
+  }
+
+  clinicTime(dateObj) {
+    let h = dateObj.getUTCHours() + 5;
+    if (h >= 24) h -= 24;
+    return String(h).padStart(2, '0') + ':' + 
+           String(dateObj.getUTCMinutes()).padStart(2, '0');
   }
 
   async initialize() {
@@ -49,21 +54,15 @@ class CalendarService {
       const schedule = require('../../config/schedule.json');
       const doctors = require('../../config/doctors.json');
       
+      const dateStr = date.toISOString().split('T')[0];
       const dayOfWeek = date.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
       if (schedule.daysOff.includes(dayOfWeek)) {
-        console.log(`📅 [${date.toISOString().split('T')[0]}] Выходной день (${dayOfWeek})`);
-        return { date: date.toISOString().split('T')[0], slots: [], freeDoctorsBySlot: {} };
+        console.log(`📅 [${dateStr}] Выходной день (${dayOfWeek})`);
+        return { date: dateStr, slots: [], freeDoctorsBySlot: {} };
       }
 
-      const [workStartHour, workStartMinute] = schedule.workStart.split(':').map(Number);
-      const [workEndHour, workEndMinute] = schedule.workEnd.split(':').map(Number);
-      const slotDuration = schedule.slotMinutes * 60 * 1000;
-
-      const startOfDay = new Date(date);
-      startOfDay.setHours(0, 0, 0, 0);
-
-      const endOfDay = new Date(date);
-      endOfDay.setHours(23, 59, 59, 999);
+      const startOfDay = this.clinicMoment(dateStr, '00:00');
+      const endOfDay = this.clinicMoment(dateStr, '23:59');
 
       const response = await this.calendar.events.list({
         calendarId: this.calendarId,
@@ -103,28 +102,25 @@ class CalendarService {
       });
 
       const allSlots = [];
-      const slotStart = new Date(date);
-      slotStart.setHours(workStartHour, workStartMinute, 0, 0);
+      const slotDuration = schedule.slotMinutes * 60 * 1000;
 
-      const slotEnd = new Date(date);
-      slotEnd.setHours(workEndHour, workEndMinute, 0, 0);
+      const startTimeStr = schedule.workStart;
+      const endTimeStr = schedule.workEnd;
+      
+      const workStart = this.clinicMoment(dateStr, startTimeStr);
+      const workEnd = this.clinicMoment(dateStr, endTimeStr);
+      
+      const lunchStart = this.clinicMoment(dateStr, schedule.lunchBreak.start);
+      const lunchEnd = this.clinicMoment(dateStr, schedule.lunchBreak.end);
 
-      let currentTime = new Date(slotStart);
+      let currentTime = new Date(workStart);
 
-      while (currentTime < slotEnd) {
+      while (currentTime < workEnd) {
         const slotEndTime = new Date(currentTime.getTime() + slotDuration);
         
-        if (slotEndTime > slotEnd) {
+        if (slotEndTime > workEnd) {
           break;
         }
-
-        const lunchStart = new Date(date);
-        const [lunchStartHour, lunchStartMinute] = schedule.lunchBreak.start.split(':').map(Number);
-        lunchStart.setHours(lunchStartHour, lunchStartMinute, 0, 0);
-
-        const lunchEnd = new Date(date);
-        const [lunchEndHour, lunchEndMinute] = schedule.lunchBreak.end.split(':').map(Number);
-        lunchEnd.setHours(lunchEndHour, lunchEndMinute, 0, 0);
 
         if (currentTime >= lunchStart && currentTime < lunchEnd) {
           currentTime = new Date(lunchEnd);
@@ -157,7 +153,7 @@ class CalendarService {
               allSlots.push({
                 start: new Date(slotStartTime),
                 end: new Date(slotEndTime),
-                formatted: slotStartTime.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+                formatted: this.clinicTime(slotStartTime),
                 freeDoctors: freeDoctors
               });
             }
@@ -174,7 +170,7 @@ class CalendarService {
               allSlots.push({
                 start: new Date(slotStartTime),
                 end: new Date(slotEndTime),
-                formatted: slotStartTime.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
+                formatted: this.clinicTime(slotStartTime),
                 freeDoctors: [doctorId]
               });
             }
@@ -195,10 +191,10 @@ class CalendarService {
         ? allDoctorsBusyIntervals.length 
         : (doctorBusyIntervals[doctorId]?.length || 0) + allDoctorsBusyIntervals.length;
 
-      console.log(`📅 [${date.toISOString().split('T')[0]}] Врач ${doctorId}: занято ${busyCount}, свободно ${freeSlots.length}`);
+      console.log(`📅 [${dateStr}] Врач ${doctorId}: занято ${busyCount}, свободно ${freeSlots.length}`);
 
       return {
-        date: date.toISOString().split('T')[0],
+        date: dateStr,
         slots: freeSlots,
         freeDoctorsBySlot: freeDoctorsBySlot
       };
@@ -252,17 +248,11 @@ class CalendarService {
 
     try {
       const doctors = require('../../config/doctors.json');
-      const [hours, minutes] = time.split(':').map(Number);
-      const startDateTime = new Date(date);
-      startDateTime.setHours(hours, minutes, 0, 0);
-
+      const startDateTime = this.clinicMoment(date, time);
       const endDateTime = new Date(startDateTime.getTime() + durationMinutes * 60 * 1000);
 
-      const startOfDay = new Date(date);
-      startOfDay.setHours(0, 0, 0, 0);
-
-      const endOfDay = new Date(date);
-      endOfDay.setHours(23, 59, 59, 999);
+      const startOfDay = this.clinicMoment(date, '00:00');
+      const endOfDay = this.clinicMoment(date, '23:59');
 
       const response = await this.calendar.events.list({
         calendarId: this.calendarId,
@@ -349,26 +339,32 @@ class CalendarService {
       }
 
       const actualDoctorId = doctorId === 'any' ? null : doctorId;
-      const [hours, minutes] = time.split(':').map(Number);
-      const startDateTime = new Date(date);
-      startDateTime.setHours(hours, minutes, 0, 0);
-
+      const startDateTime = this.clinicMoment(date, time);
       const endDateTime = new Date(startDateTime.getTime() + durationMinutes * 60 * 1000);
+
+      const procName = (p) => {
+        if (!p) return 'Процедура';
+        if (typeof p === 'string') {
+          const found = procedures.процедуры.find(x => x.id === p);
+          return found ? found.название : p;
+        }
+        return p.name || p.title || p.id || 'Процедура';
+      };
 
       let summary = '';
       if (patient.priority === 'urgent') {
         summary = `🚨 СРОЧНО — ${patient.name}, ${patient.phone}`;
       } else if (patient.isReturningPatient) {
-        summary = `${procedureData?.название || 'Процедура'} — ${patient.name} (постоянный пациент)`;
+        summary = `${procName(procedure)} — ${patient.name} (постоянный пациент)`;
       } else {
-        summary = `${procedureData?.название || 'Процедура'} — ${patient.name}, ${patient.phone}`;
+        summary = `${procName(procedure)} — ${patient.name}, ${patient.phone}`;
       }
 
       if (actualDoctorId && doctor) {
         summary += ` (${doctor.name})`;
       }
 
-      let description = `Пациент: ${patient.name}\nТелефон: ${patient.phone}\nПроцедура: ${procedureData?.название || 'Не указана'}`;
+      let description = `Пациент: ${patient.name}\nТелефон: ${patient.phone}\nПроцедура: ${procName(procedure)}`;
       
       if (actualDoctorId) {
         description += `\ndoctor_id: ${actualDoctorId}`;
@@ -389,11 +385,11 @@ class CalendarService {
         description,
         start: {
           dateTime: startDateTime.toISOString(),
-          timeZone: 'Europe/Moscow',
+          timeZone: 'Asia/Yekaterinburg',
         },
         end: {
           dateTime: endDateTime.toISOString(),
-          timeZone: 'Europe/Moscow',
+          timeZone: 'Asia/Yekaterinburg',
         },
         reminders: {
           useDefault: true,

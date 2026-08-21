@@ -1046,13 +1046,24 @@ class DentistBot {
             adminPrefix = '🆕 Новая запись — ';
           }
 
+          const aiService = require('../services/ai');
+          const procName = (p) => {
+            if (!p) return 'Процедура';
+            const procedures = aiService.getProcedures();
+            if (typeof p === 'string') {
+              const found = procedures.find(x => x.id === p);
+              return found ? found.name : p;
+            }
+            return p.name || p.title || p.id || 'Процедура';
+          };
+
           await ctx.editMessageText(
             `✅ Запись успешно создана!\n\n` +
             `Ваша запись подтверждена на:\n` +
             `📅 ${new Date(dateStr).toLocaleDateString('ru-RU')} в ${timeStr}\n` +
             `👨‍⚕️ ${doctor ? doctor.name : 'Любой свободный врач'}\n` +
             `👤 ${userState.name}\n` +
-            (userState.procedure ? `🦷 ${userState.procedure.name}\n` : '') +
+            (userState.procedure ? `🦷 ${procName(userState.procedure)}\n` : '') +
             `Мы ждём вас в клинике!`
           );
 
@@ -1064,7 +1075,7 @@ class DentistBot {
                 `👤 ${userState.name} (${userState.phone})\n` +
                 `📅 ${new Date(dateStr).toLocaleDateString('ru-RU')} в ${timeStr}\n` +
                 (doctor ? `👨‍⚕️ ${doctor.name}\n` : '') +
-                (userState.procedure ? `🦷 ${userState.procedure.name}\n` : '') +
+                (userState.procedure ? `🦷 ${procName(userState.procedure)}\n` : '') +
                 (userState.problemDescription ? `💬 ${userState.problemDescription.substring(0, 200)}\n` : '')
               );
             } catch (error) {
