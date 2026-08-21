@@ -222,7 +222,7 @@ class DentistBot {
         await ctx.reply(
           '💬 Задайте ваш вопрос о процедурах, ценах или записи.\n\n' +
           'Я постараюсь помочь или предложу записаться на консультацию.',
-          Markup.removeKeyboard()
+          undefined
         );
         this.userStates.set(ctx.chat.id, { state: 'awaiting_question' });
       } catch (error) {
@@ -332,7 +332,7 @@ class DentistBot {
       `/changename — изменить имя\n` +
       `/changephone — изменить телефон\n` +
       `/myhistory — история визитов`,
-      Markup.removeKeyboard()
+      undefined
     );
   }
 
@@ -355,7 +355,7 @@ class DentistBot {
     await ctx.reply(
       '👨‍👩‍👧‍👦 Добавление члена семьи\n\n' +
       'Укажите родственную связь (например: жена, сын, дочь, муж):',
-      Markup.removeKeyboard()
+      undefined
     );
   }
 
@@ -378,7 +378,7 @@ class DentistBot {
     await ctx.reply(
       '📝 Изменение имени\n\n' +
       'Введите ваше новое имя:',
-      Markup.removeKeyboard()
+      undefined
     );
   }
 
@@ -401,7 +401,7 @@ class DentistBot {
     await ctx.reply(
       '📞 Изменение телефона\n\n' +
       'Введите ваш новый номер телефона (формат: +7XXXXXXXXXX или 8XXXXXXXXXX):',
-      Markup.removeKeyboard()
+      undefined
     );
   }
 
@@ -437,7 +437,7 @@ class DentistBot {
           '📋 История визитов:\n\n' +
           'Записей в календаре не найдено.\n\n' +
           `Всего визитов в профиле: ${patient.visitsCount}`,
-          Markup.removeKeyboard()
+          undefined
         );
         return;
       }
@@ -458,7 +458,7 @@ class DentistBot {
       await ctx.reply(
         `📋 История визитов:\n\n${history}\n\n` +
         `Всего визитов в профиле: ${patient.visitsCount}`,
-        Markup.removeKeyboard()
+        undefined
       );
     } catch (error) {
       console.error('Ошибка получения истории:', error);
@@ -466,7 +466,7 @@ class DentistBot {
         `📋 История визитов:\n\n` +
         `Не удалось загрузить записи из календаря.\n\n` +
         `Всего визитов в профиле: ${patient.visitsCount}`,
-        Markup.removeKeyboard()
+        undefined
       );
     }
   }
