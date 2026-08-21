@@ -2,6 +2,14 @@ const { google } = require('googleapis');
 const fs = require('fs').promises;
 const path = require('path');
 
+class CalendarService {
+  constructor() {
+    this.calendar = null;
+    this.calendarId = process.env.GOOGLE_CALENDAR_ID;
+    this.initialized = false;
+    this.serviceAccountJson = null;
+  }
+
   clinicMoment(dateStr, timeStr) {
     const [y, m, d] = dateStr.split('-').map(Number);
     const [hh, mm] = timeStr.split(':').map(Number);
